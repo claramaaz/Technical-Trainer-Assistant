@@ -20,9 +20,9 @@ Week 1 of 12. Currently: specification phase (no application code yet).
 - Task board (Jira): *to be created*
 
 ## Documents
-- [docs/SPEC.md](docs/SPEC.md): software requirements specification
-- docs/AI_LOG.md: record of AI-assisted work, including mistakes and how we caught them *(coming)*
-- docs/EVALUATION.md: evaluation set and measured results *(coming)*
+- [SPEC.md](SPEC.md): software requirements specification
+- [AI_LOG.md](AI_LOG.md): record of AI-assisted work, including mistakes and how we caught them
+- EVALUATION.md: evaluation set and measured results *(coming)*
 
 ## Corpus
 FAA aviation handbooks and manuals (United States Government works, public domain):
