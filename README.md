@@ -13,16 +13,16 @@ It is built to work on a phone with a slow connection.
 - Supervisor: Mr. Georges Salloum
 
 ## Status
-Week 1 of 12. Currently: specification phase (no application code yet).
+Week 0 of 12. Specification tagged (`spec-v1`). Working on the Week 1 gate: one handbook ingested with figure and caption counts.
 
 ## Links
 - Deployed application: *not deployed yet*
 - Task board (Jira): *to be created*
 
 ## Documents
-- [SPEC.md](SPEC.md): software requirements specification
-- [AI_LOG.md](AI_LOG.md): record of AI-assisted work, including mistakes and how we caught them
-- EVALUATION.md: evaluation set and measured results *(coming)*
+- [docs/SPEC.md](docs/SPEC.md): software requirements specification
+- [docs/AI_LOG.md](docs/AI_LOG.md): record of AI-assisted work, including mistakes and how we caught them
+- [docs/EVALUATION.md](docs/EVALUATION.md): evaluation set, method and measured results
 
 ## Corpus
 FAA aviation handbooks and manuals (United States Government works, public domain):
@@ -38,7 +38,21 @@ Other choices (API framework, embedding model, hosting) are documented in SPEC.m
 once confirmed.
 
 ## How to run
-*To be written in Week 1, once the project structure exists.*
+Requires Python 3.11+. Run from the repository root (Windows PowerShell shown).
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+python ingestion\download_handbook.py FAA-H-8083-15B      # download + verify into data\raw\
+python ingestion\inspect_pdf.py data\raw\FAA-H-8083-15B.pdf
+python ingestion\extract_figures.py data\raw\FAA-H-8083-15B.pdf
+python ingestion\sample_check.py draw FAA-H-8083-15B --n 20 --seed 7
+python -m pytest -q                                          # tests
+```
+
+Downloaded PDFs and extracted figures go to `data/`, which is not committed.
 
 ## Git workflow
 - `main` is protected; work happens on branches named `feature/P7-<ticket>-<short-name>`
