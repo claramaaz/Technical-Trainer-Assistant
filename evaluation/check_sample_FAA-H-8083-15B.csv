@@ -1,0 +1,21 @@
+figure_number,pdf_page,printed_page,image_path,caption,caption_correct,page_correct,image_complete,notes
+1-20,45,1-26,figures/1-20.png,Figure 1-20. Terms/landing minima data.,y,y,y,
+2-2,53,2-2,figures/2-2.png,Figure 2-2. Audio panel.,y,y,y,
+2-7,57,2-6,figures/2-7.png,Figure 2-7. Combined radar and beacon antenna.,y,y,y,
+2-13,61,2-10,figures/2-13.png,Figure 2-13. A/FD center frequencies listing.,y,y,y,
+2-15,64,2-13,figures/2-15.png,Figure 2-15. Aircraft management using PRM. (Note the no transgression zone (NTZ) and how the aircraft are separated.),y,y,y,
+3-5,72,3-5,figures/3-5.png,Figure 3-5. Angular acceleration.,y,y,y,
+3-8,74,3-7,figures/3-8.png,Figure 3-8. Sensations from centrifugal force.,y,y,y,
+4-1,79,4-2,figures/4-1.png,Figure 4-1. The airfoil.,y,y,y,
+5-7,101,5-6,figures/5-7.png,Figure 5-7. International Civil Aviation Organization (ICAO) cold temperature error table.,y,y,y,
+5-39,119,5-24,figures/5-39.png,Figure 5-39. A typical cue that a pilot would follow.,y,y,n,includes the caption in the image
+5-54,128,5-33,figures/5-54.png,Figure 5-54. Concept of the traffic information system.,y,y,y,
+7-5,164,7-3,figures/7-5.png,"Figure 7-5. Pitch correction for level flight, one bar width.",y,y,y,
+7-27,176,7-15,figures/7-27.png,Figure 7-27. Stabilized climb at constant rate.,y,y,y,
+7-42,192,7-31,figures/7-42.png,Figure 7-42. Standard procedure turn (entire pattern in level flight).,y,y,y,
+7-56,200,7-39,figures/7-56.png,"Figure 7-56. Figure shows both an increase in speed and altitude where pitch adjustment alone is insufficient. In this situation, a reduction of power is also necessary.",y,y,y,
+7-64,208,7-47,figures/7-64.png,Figure 7-64. Constant airspeed climb from established airspeed.,y,y,y,
+9-6,249,9-6,figures/9-6.png,Figure 9-6. ADF homing with a crosswind.,y,y,n,includes partial text
+9-21,265,9-22,figures/9-21.png,Figure 9-21. Aircraft is illustrated inbound on the localizer course.,y,y,n,includes the caption in the image
+10-2,297,10-6,figures/10-2.png,Figure 10-2. Departure procedure (DP).,y,y,n,includes partial text
+11-18,339,11-14,figures/11-18.png,Figure 11-18. A typical display on aircraft MFD when using TIS.,y,y,y,
