@@ -1,4 +1,25 @@
+# Downloaded handbooks, extracted figures, inspection output (large, reproducible)
 data/
+*.pdf
+*.part
+
+# Secrets
 .env
+.env.*
+
+# Python
 __pycache__/
+*.pyc
 .venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Frontend (later)
+node_modules/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

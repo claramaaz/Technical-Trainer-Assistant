@@ -1,0 +1,89 @@
+# AI Log — Technical Training Assistant (P7)
+
+One entry per significant delegation to an AI tool. Record what was wrong, even when it was small: a log where nothing was ever wrong is read as a log that was not kept.
+
+## Entry template
+
+### YYYY-MM-DD — short title
+- **Who:** team member
+- **Tool:** e.g. Claude, Copilot
+- **What we asked:**
+- **What came back:**
+- **What was wrong with it:**
+- **How we caught it:** (test, manual check against the handbook, code review, running it…)
+- **What we kept / changed:**
+- **Commit / PR:**
+
+---
+
+## Entries
+
+### 2026-10-19 — Converting the SRS to SPEC.md
+- **Who:**
+- **Tool:** Claude
+- **What we asked:** Convert the Word SRS to SPEC.md and fix the gaps found against the brief (chunking justification, metrics, generation requirement, open items in UC-04 and UC-07, cross-references).
+- **What came back:** A Markdown SPEC with a new section 5, FR-009, decisions for UC-04 A2 and UC-07, and a technology decision table.
+- **What was wrong with it:** *(fill in after your review — e.g. a requirement you disagreed with, a decision you changed, a wording that did not match the brief)*
+- **How we caught it:**
+- **What we kept / changed:**
+- **Commit / PR:**
+
+### 2026-10-23 — Repository review, corpus downloader and PDF inspector
+- **Who:** Clara
+- **Tool:** Claude
+- **What we asked:** Inspect the repository against the brief and SRS, choose the first handbook, write a verified download script and a PDF inspection script.
+- **What came back:** `corpus/handbooks.csv`, `ingestion/download_handbook.py` (size check, %PDF/%%EOF check, SHA-256, licence and retrieval date in a `.meta.json`), `ingestion/inspect_pdf.py`, an extended `.gitignore`, and a README fix.
+- **What was wrong with it:** (1) The earlier SPEC conversion (19 Oct entry) wrote a change log saying SPEC.md was tagged `spec-v1`, but no tag existed on GitHub. (2) The same conversion linked README to `docs/SPEC.md`, which did not exist at the time. (3) The README "fix" in this session pointed the links to the repository root, which broke them again once we moved the documents into `docs/`.
+- **How we caught it:** Listing the tags on GitHub (`git ls-remote --tags origin`) and following the README links after the move.
+- **What we kept / changed:** Created the `spec-v1` tag before any code commit. Corrected the README links to `docs/`. Kept the scripts; they were tested on a small generated PDF before we ran them on the real handbook.
+- **Commit / PR:** `P7-1` branch `feature/P7-1-corpus-download`
+
+### 2026-10-23 — Figure extractor and caption-check tooling
+- **Who:** Clara
+- **Tool:** Claude
+- **What we asked:** A caption-first figure extractor (figures, captions, PDF page and printed page, referencing paragraphs, unbound regions) and a tool to draw and score the 20-pair manual check.
+- **What came back:** `ingestion/extract_figures.py`, `ingestion/sample_check.py`, `tests/test_extract_figures.py` (6 tests on a generated 3-page PDF: raster figure, vector-only figure, caption without artwork, uncaptioned image, figure-range mentions).
+- **What was wrong with it:** (1) Crops were flush against the outer lines (no margin); fixed with 6 pt padding. (2) The tests only covered a simple generated PDF, so the first run on the real handbook bound only 277 of 347 captions, and some crops were clearly wrong in the folder view: Figures 3-5 and 3-6 merged into one image with the text between them (they are 11 pt apart, under the 12 pt merge distance); sideways captions on landscape chart pages (e.g. Figure 1-8) never matched because the code only looked *above* a caption; vector paths drawn larger than their clipping area (e.g. PDF page 39) pulled body text and footers into figures.
+- **How we caught it:** Browsing `data/extracted/.../figures` in Explorer (3-6, 3-9, 4-12 contained body text), then drawing the caption and region boxes on the problem pages to see why.
+- **What we kept / changed:** Three fixes, each with a test that fails when the fix is removed (checked by temporarily disabling it): never merge pieces across a caption; sideways captions bind to the region on their left; vector paths are cut to their clip rectangle. Result: 334/347 bound. Crops that still contain a body paragraph (8) are flagged `needs_review` for the QA queue instead of tuning thresholds to individual pages.
+- **Commit / PR:** `P7-2` branch `feature/P7-2-figure-extraction`
+
+### 2026-10-24 — Recording the 20-pair caption check
+- **Who:** Clara
+- **Tool:** Claude
+- **What we asked:** Record the results of our manual 20-pair check and the badly cropped figures we found outside the sample, then commit.
+- **What came back:** The judged sample saved as `evaluation/check_sample_FAA-H-8083-15B.csv`, sections 1.2 and 1.3 of EVALUATION.md, and a repair step in `sample_check.py score`.
+- **What was wrong with it:** Before recording, Claude noticed that our saved CSV was corrupted: Excel had turned all 20 figure numbers and printed page numbers into dates ("1-20" became "20-Jan", "9-21" became "21-Sep"). Our y/n judgements were not affected. Separately, our own browsing found 5 crops with surrounding text (9-19, 9-20, 9-21, 11-13, 11-2) that the extractor's `needs_review` check had not flagged, so the check is weaker than the report suggested.
+- **How we caught it:** Excel: reading the CSV before committing it. Bad crops: looking through the figures folder by hand, not only the random sample.
+- **What we kept / changed:** Restored the two columns from `figures.jsonl` (matched on `image_path`, which Excel does not alter) and checked that the score is unchanged. Added the repair to `sample_check.py`. Diagnosed the bad crops (raster images placed partly off the page or clipped; the clipping fix only handled vector drawings) and recorded them as the next extractor fix.
+- **Commit / PR:** branch `feature/P7-2-figure-extraction`
+
+### 2026-10-27 — P7-4: crops that included surrounding text
+- **Who:** Clara
+- **Tool:** Claude
+- **What we asked:** Fix the figure crops that contained body text (9-19, 9-20, 9-21, 11-13, 11-2, 1-15).
+- **What came back:** Each image/drawing box is shrunk to where it leaves visible ink on a render of the page with the text removed; a box that runs across a caption is cut at the caption. The `needs_review` rule was relaxed to "at least half of a long paragraph inside the crop". Two new tests. Result: 344/347 bound (was 334), 3 caption-only (was 13).
+- **What was wrong with it:** (1) The first idea, reading each image's clip from PyMuPDF, does not work: the reported image rectangles ignore clipping. (2) The ink fix alone did not fix 11-13, because one image covered two figures. (3) Of the 16 crops that changed, 2-4, 6-37 and 7-47 still contained text and 2-4 and 6-37 were not flagged, because the flag required a paragraph to be completely inside the crop. (4) The first version of the test PDF crashed PyMuPDF with a memory error (`malloc(): invalid size`) when filling part of a test image; and the first oversized-image test passed even with the fix removed, so it proved nothing.
+- **How we caught it:** Looking at every changed crop on a contact sheet, not only the six we asked about; removing each fix temporarily and checking that its test fails.
+- **What we kept / changed:** Built the test image from raw bytes; rewrote the oversized-image test so the hidden part hangs sideways over a text column (now it fails without the fix). Known cost: extraction takes about 6.5 minutes instead of 1.5.
+- **Commit / PR:** branch `feature/P7-4-crop-fix`
+
+### 2026-10-28 — P7-5: the 15 figures Clara found after v4
+- **Who:** Clara
+- **Tool:** Claude
+- **What we asked:** Fix the figures Clara found wrong by browsing every v4 image: 6-6 and 7-49 missing; caption inside 1-18, 1-19, 5-37, 10-1; 5-38 inside 5-37 and 5-51 inside 5-52; text in 6-5, 6-7, 6-37, 7-47, 1-17; 6-35, 8-5, 6-20 cut off.
+- **What came back:** Extractor v5. Two figures side by side, each with its own caption, are never joined; the merge distance went from 12 to 8 pt (the column gap is about 11 pt); an image's box keeps only ink that no other piece covers; the caption is cut out of the box and the saved image's margin stops at the caption; uncaptioned pieces beside or just above/below a figure and short labels at its edge are added to it. 22 tests; 347 of 347 captions bound.
+- **What was wrong with it:** (1) The first idea for the side-by-side case (block a merge when a caption sits in the gap) did not work: the captions were below the pictures, not between them. (2) The label rule first took a line of body text ("… [Figure 4-7]") and the axis numbers of the next figure; the chart-and-legend case (9-36) was split. (3) Excluding other images' ink made the run take about 7 s per page (45 minutes per handbook) until it was rewritten as one coverage count per page. (4) A containment test failed on rounding noise (79.99999 vs 80). (5) Three of the new tests passed even with their fix removed. (6) The label fix made 4-9 lose its second panel (two panels 47 pt apart, joined before only through their axis labels); found on the contact sheet of the final run and fixed by adding neighbours a second time after the labels. (7) After Clara ran v5 her figures folder held 691 images: the old v4 folder was still there, and the extractor saved each new image as `1-1_p22.png` because `1-1.png` already existed (the suffix was meant only for a figure number printed twice). Now each run empties figures/ and unbound/ first, and the suffix is decided from the captions; a test runs the extractor twice into one folder.
+- **How we caught it:** Clara's own review of the images, not the counts; drawing each problem page with its boxes; contact sheets of every crop that changed (37); timing each stage; removing each fix on purpose and re-running the tests.
+- **What we kept / changed:** All fixes kept, each now guarded by a test that fails without it. Labels must be closer to this figure than to any other picture, and prose that mentions a figure is never a label. A 1 pt tolerance on containment.
+- **Commit / PR:** branch `feature/P7-4-crop-fix`
+
+### 2026-10-28 (afternoon) — upright sideways figures; 4-11, 7-47, 7-1/7-3
+- **Who:** Clara
+- **Tool:** Claude
+- **What we asked:** Should figures be stored upright? Fix 4-11 (cropped) and 7-47 (maybe cropped). All other figures were judged good.
+- **What came back:** The 12 sideways figures (landscape charts, caption reading bottom to top) are now saved upright, with the turn recorded as `rotation` in figures.jsonl. Text labels are recognised by their small font (8–9 pt; body text 10–11 pt, headings 12 pt). Ink belongs to the smallest piece covering it, and an image placed partly off the page or across both columns loses every contest. Two captions side by side define a column boundary that no merge crosses. A caption and its figure must overlap by at least 30 % of the narrower one. The saved image's margin stops at other figures as well as at the caption.
+- **What was wrong with it:** (1) The first ink rule ("only ink no other piece covers") had cut the sky strip off 7-47, because a huge invisible image also covered it. (2) The first label fix took a 12 pt heading ("Slow-Speed Flight") into 4-11; two attempts based on distance and on the page's middle line broke 4-8, 4-9 and 8-5 instead, until the font size was used. (3) Re-running showed a new error in 7-3 (it took 7-1's panel through a 3 pt strip and a caption overlapping by 2 pt), and then a one-line sliver of 7-3 on the edge of 7-1. (4) Two rules added for 7-3 turned out to change nothing and were removed.
+- **How we caught it:** Clara's review of 4-11 and 7-47; before/after contact sheets of the 13 crops that changed; drawing page 163 with its boxes; removing each rule on purpose (every remaining rule now has a test that fails without it).
+- **What we kept / changed:** 22 tests. Counts unchanged (347/347, 3 flagged); 13 crops changed since the morning run, each checked.
+- **Commit / PR:** branch `feature/P7-4-crop-fix`
