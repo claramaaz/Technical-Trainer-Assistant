@@ -1,0 +1,26 @@
+id,question,type,handbook,figure_number,printed_page,author
+Q001,What are the different airspace classes ?,topic,FAA-H-8083-15B,1-1,1-3,Clara
+Q002,What are the parts of the inner ear?,topic,FAA-H-8083-15B,3-3,3-4,Clara
+Q003,How can narrower-than-usual runway create an illusion?,topic,FAA-H-8083-15B,3-9,3-10,Clara
+Q004,How does the angle of attack change the aerodynamic forces on a wing?,topic,FAA-H-8083-15B,4-2,4-2,Clara
+Q005,How does Newton's second law explain the relationship between force mass and acceleration?,topic,FAA-H-8083-15B,4-5,4-4,Clara
+Q006,How does temperature change with altitude and how does this affect aircraft performance?,topic,FAA-H-8083-15B,4-7,4-6,Clara
+Q007,What are the four forces acting on an aircraft in flight?,topic,FAA-H-8083-15B,4-3,4-3,Clara
+Q008,What do pilots do under extremely cold conditions?,topic,FAA-H-8083-15B,5-7,5-6,Clara
+Q009,What is the purpose of the rate gyro in a turn coordinator?,topic,FAA-H-8083-15B,5-34,5-21,Clara
+Q010,What are the components that make up the attitude indicator display?,topic,FAA-H-8083-15B,7-52,7-38,Clara
+Q011,What warnings appear on the PFD if the AHRS fails during flight?,topic,FAA-H-8083-15B,7-73,7-58,Clara
+Q012,How do the different radio wave propagations work for aviation navigation?,topic,FAA-H-8083-15B,9-1,9-2,Clara
+Q013,How is the VOR radials represented?,topic,FAA-H-8083-15B,9-10,9-10,Clara
+Q014,How do I fly a DME arc to intercept a VOR radial?,topic,FAA-H-8083-15B,9-17,9-18,Clara
+Q015,What are the different patterns that can be used for circling approach?,topic,FAA-H-8083-15B,10-13,10-21,Clara
+Q016,How does wind affect an aircraft during takeoff and landing?,topic,FAA-H-8083-15B,10-17,10-25,Clara
+Q017,How the P-static problems are resolved?,topic,FAA-H-8083-15B,11-2,11-3,Clara
+Q018,What the pilot utilized to determine which airport best suits to their individual needs?,topic,FAA-H-8083-15B,11-11,11-10,Clara
+Q019,What symbols does TIS use to show nearby traffic on the display?,topic,FAA-H-8083-15B,11-18,11-14,Clara
+Q020,During a climb the pilot notices the airspeed indicator is reading zero. What could be the cause?,symptom,FAA-H-8083-15B,5-2,5-3,Clara
+Q021,What are the components of a typical Flight Director System (FDS)?,topic,FAA-H-8083-15B,5-40,5-24,Clara
+Q022,The pilot notices the magnetic compass is turning erratically while banking. What is this error called?,symptom,FAA-H-8083-15B,5-20,5-14,Clara
+Q023,What are the indications of a nose-high unusual attitude?,symptom,FAA-H-8083-15B,7-39,7-27,Clara
+Q024,What is the maximum passenger capacity of a Boeing 747?,no-answer,FAA-H-8083-15B,,,Clara
+Q025,How do you reset the flight computer on an Airbus A320?,no-answer,FAA-H-8083-15B,,,Clara
