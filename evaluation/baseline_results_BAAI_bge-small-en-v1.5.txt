@@ -1,0 +1,59 @@
+Baseline retrieval: FAA-H-8083-15B, model BAAI/bge-small-en-v1.5
+1080 chunks, 23 answerable questions, 2 no-answer
+Relevant chunk: figure = cites the expected figure (primary); page = covers the expected printed page
+
+Questions that cannot hit under the figure rule (no chunk cites their figure): 0
+Questions that cannot hit under the page rule (no chunk covers their page): 1 (Q001)
+
+[figure rule, with BGE query prefix]
+                           n   Hit@1   Hit@5   MRR@5  MRR full
+  all answerable          23   0.609   0.783   0.688     0.701
+  symptom                  3   0.667   0.667   0.667     0.667
+  topic                   20   0.600   0.800   0.692     0.706
+
+Per question (figure rule, with prefix): rank of the first relevant chunk, '-' = none
+  Q001 fig   1-1 rank    1  top1 0.785 c0002 p.1-2 Introduction > Airspace Classification
+  Q002 fig   3-3 rank    1  top1 0.750 c0120 p.3-4 Sensory Systems for Orientation > Ears
+  Q003 fig   3-9 rank    1  top1 0.899 c0151 p.3-9 Optical Illusions > Runway Width Illusion
+  Q004 fig   4-2 rank    1  top1 0.757 c0156 p.4-2 Review of Basic Aerodynamics
+  Q005 fig   4-5 rank    1  top1 0.773 c0166 p.4-4 Review of Basic Aerodynamics > Newton’s Second Law, the Law 
+  Q006 fig   4-7 rank    1  top1 0.794 c0173 p.4-5 Atmosphere > International Standard Atmosphere (ISA) > Densi
+  Q007 fig   4-3 rank    1  top1 0.881 c0157 p.4-2 Review of Basic Aerodynamics > The Four Forces
+  Q008 fig   5-7 rank   18  top1 0.742 c0226 p.4-17 Summary
+  Q009 fig  5-34 rank    1  top1 0.781 c0300 p.5-21 Gyroscopic Instruments > Turn Indicators > Turn Coordinator
+  Q010 fig  7-52 rank    1  top1 0.804 c0539 p.7-37 Straight-and-Level Flight > Bank Control > Attitude Indicato
+  Q011 fig  7-73 rank    9  top1 0.768 c0961 p.11-4 Aircraft System Malfunctions > Electronic Flight Display Mal
+  Q012 fig   9-1 rank    2  top1 0.773 c0687 p.9-2 Basic Radio Principles > How Radio Waves Propagate > Space W
+  Q013 fig  9-10 rank    1  top1 0.778 c0709 p.9-10 Traditional Navigation Systems > (VOR) > VOR Components
+  Q014 fig  9-17 rank    3  top1 0.826 c0736 p.9-19 Traditional Navigation Systems > Distance Measuring Equipmen
+  Q015 fig 10-13 rank    1  top1 0.812 c0906 p.10-20 Approaches > Circling Approaches
+  Q016 fig 10-17 rank   10  top1 0.739 c0191 p.4-10 Slow-Speed Flight > Small Airplanes
+  Q017 fig  11-2 rank    2  top1 0.655 c0974 p.11-8 Pitot/Static System Failure
+  Q018 fig 11-11 rank   52  top1 0.631 c0067 p.1-27 Terminal Arrival Area (TAA) > Airport Sketch /Airport Diagra
+  Q019 fig 11-18 rank    1  top1 0.761 c0989 p.11-12 Situational Awareness > Traffic Avoidance
+  Q020 fig   5-2 rank  466  top1 0.773 c0360 p.6-6 Learning Methods > Supporting Method > Pitch Control
+  Q021 fig  5-40 rank    2  top1 0.877 c0309 p.5-23 Analog Pictorial Displays > Flight Director System (FDS)
+  Q022 fig  5-20 rank    1  top1 0.799 c0272 p.5-13 Magnetism > The Basic Aviation Magnetic Compass > Magnetic C
+  Q023 fig  7-39 rank    1  top1 0.765 c0502 p.7-27 Unusual Attitudes and Recoveries > Recognizing Unusual Attit
+
+[page rule, with BGE query prefix]
+                           n   Hit@1   Hit@5   MRR@5  MRR full
+  all answerable          23   0.478   0.696   0.567     0.586
+  symptom                  3   0.333   0.667   0.500     0.503
+  topic                   20   0.500   0.700   0.577     0.598
+
+[figure rule, without query prefix]
+                           n   Hit@1   Hit@5   MRR@5  MRR full
+  all answerable          23   0.565   0.783   0.667     0.676
+  symptom                  3   0.333   0.667   0.500     0.501
+  topic                   20   0.600   0.800   0.692     0.702
+
+[page rule, without query prefix]
+                           n   Hit@1   Hit@5   MRR@5  MRR full
+  all answerable          23   0.522   0.652   0.576     0.599
+  symptom                  3   0.667   0.667   0.667     0.670
+  topic                   20   0.500   0.650   0.562     0.588
+
+No-answer questions: best cosine score (with prefix); compare with the answerable top-1 scores above
+  Q024 0.585  What is the maximum passenger capacity of a Boeing 747?
+  Q025 0.648  How do you reset the flight computer on an Airbus A320?

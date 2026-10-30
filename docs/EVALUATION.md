@@ -86,4 +86,44 @@ With 20 pairs, 20/20 is consistent with a true caption-binding accuracy anywhere
 
 ## 3. Baseline retrieval results (Week 3)
 
+### 3.1 Baseline v1: text chunks only, BAAI/bge-small-en-v1.5, no database
+
+Commands (from the repository root; the second step reads `chunk_embeddings_*.npy` written by the first):
+`python evaluation/baseline_retrieval.py embed FAA-H-8083-15B BAAI/bge-small-en-v1.5`
+`python evaluation/baseline_retrieval.py evaluate FAA-H-8083-15B BAAI/bge-small-en-v1.5`
+Full output: [`evaluation/baseline_results_BAAI_bge-small-en-v1.5.txt`](../evaluation/baseline_results_BAAI_bge-small-en-v1.5.txt). The scoring functions are covered by `tests/test_baseline_retrieval.py`.
+
+**Setup.** Model `BAAI/bge-small-en-v1.5` (384 dimensions; sentence-transformers 6.2.0). The 1,080 chunks of `chunks.jsonl` (5.1, cap 200 words) are embedded from `embed_text` (heading path + text), in file order, with normalized vectors; ranking is cosine similarity, which for normalized vectors is a dot product, over all 1,080 chunks. The longest chunk is 405 tokens, under the model's 512-token limit, so nothing is truncated. Questions are encoded with BGE's query instruction ("Represent this sentence for searching relevant passages: "); chunks have no prefix. Figures are not searched in this baseline (no figure documents, no image embeddings).
+
+**Relevance rule.** A chunk is relevant to a question when its `figure_mentions` contains the question's expected figure (primary: the paragraph that cites a figure is the text that explains it). A secondary, looser rule counts a chunk whose `printed_pages` contains the question's expected printed page. The rules are reported separately. This is a text-only proxy for the figure metrics of 5.3, which are defined on figures judged by people (scores 2/1/0); it does not replace that judgement.
+
+**Questions.** `evaluation/questions.csv`, Clara's Q001 to Q025: 23 answerable (20 topic, 3 symptom) and 2 no-answer. Hit@1, Hit@5 and MRR are averaged over the 23 answerable questions; the no-answer questions are not scored here. MRR@5 is 0 for a question whose first relevant chunk is not in the top 5 (as in 5.3); "MRR full" uses the whole ranking.
+
+**Questions that cannot hit:** none under the figure rule (every expected figure is cited by at least one chunk); one under the page rule (Q001: no chunk covers printed page 1-3).
+
+| Relevance rule | Query prefix | Hit@1 | Hit@5 | MRR@5 | MRR full |
+| --- | --- | --- | --- | --- | --- |
+| **Figure (primary)** | **with** | **0.609** (14/23) | **0.783** (18/23) | **0.688** | 0.701 |
+| Figure | without | 0.565 (13/23) | 0.783 (18/23) | 0.667 | 0.676 |
+| Page (secondary) | with | 0.478 (11/23) | 0.696 (16/23) | 0.567 | 0.586 |
+| Page | without | 0.522 (12/23) | 0.652 (15/23) | 0.576 | 0.599 |
+
+By type (figure rule, with prefix): topic (20) Hit@1 0.600, Hit@5 0.800, MRR@5 0.692; symptom (3) Hit@1 0.667, Hit@5 0.667, MRR@5 0.667. With 3 symptom questions these two lines say very little.
+
+**Worst misses** (figure rule, with prefix; the five questions with no relevant chunk in the top 5):
+
+| Question | Expected figure | Rank of first relevant chunk | Top-1 chunk returned | Where the answer is |
+| --- | --- | --- | --- | --- |
+| Q020 "During a climb the pilot notices the airspeed indicator is reading zero. What could be the cause?" (symptom) | 5-2 | **466** of 1,080 | Learning Methods > Supporting Method > Pitch Control (p. 6-6; top-1 score 0.773) | Pitot/Static Systems > Static Pressure |
+| Q018 "What the pilot utilized to determine which airport best suits to their individual needs?" | 11-11 | 52 | Terminal Arrival Area (TAA) > Airport Sketch / Airport Diagram (p. 1-27) | GPS Nearest Airport Function > Nearest Airports Using the MFD > Nearest Airports Page Soft Keys (p. 11-10) |
+| Q008 "What do pilots do under extremely cold conditions?" | 5-7 | 18 | "Summary" (p. 4-17) | Pitot/Static Instruments > Sensitive Altimeter > Cold Weather Altimeter Errors |
+| Q016 "How does wind affect an aircraft during takeoff and landing?" | 10-17 | 10 | Slow-Speed Flight > Small Airplanes (p. 4-10) | Instrument Weather Flying > Weather Conditions > Wind Shear (p. 10-25) |
+| Q011 "What warnings appear on the PFD if the AHRS fails during flight?" | 7-73 | 9 | Aircraft System Malfunctions > Electronic Flight Display Malfunction (p. 11-4) | Turns > Steep Turns > Unusual Attitude Recovery Protection (pp. 7-56 to 7-58) |
+
+Reading of the misses (our interpretation from reading the returned chunks, not tested): Q020 is the clearest case of the learner's symptom wording ("airspeed indicator reading zero") sharing few words with the handbook's wording (static and pitot pressure); the model returned a chunk about pitch control instead. Q018, Q008 and Q016 are written in general terms ("which airport best suits", "extremely cold conditions", "wind ... during takeoff and landing") and the model returned a chunk on a nearby but different topic. For Q011 the returned chunk (display malfunctions, chapter 11) is related, but the expected chunk is in chapter 7, in the discussion of unusual attitude recovery protection. Whether a different model, a hybrid with keyword search, or the figure documents of 5.1 would fix these is not yet measured.
+
+**No-answer questions.** The best cosine score over all chunks is 0.585 for Q024 ("maximum passenger capacity of a Boeing 747") and 0.648 for Q025 ("reset the flight computer on an Airbus A320"). Among the 14 questions whose top-1 chunk is relevant, the lowest top-1 score is 0.750 (Q002). *Hypothesis only:* a score threshold between 0.648 and 0.750 would answer "no answer found" for both no-answer questions and keep all 14 correct top-1 results. This rests on two no-answer questions and is not evidence that such a threshold works: wrong top-1 chunks also score high (Q020 0.773, Q011 0.768, Q008 0.742), so a threshold cannot catch wrong answers, and it has not been tested on more no-answer questions.
+
+**Caveat on sample size.** The baseline uses 23 answerable questions, all written by one author; one question moves each metric by about 4 percentage points (1/23 = 0.043). The difference between the with and without prefix Hit@1 (0.609 vs 0.565) is one question. The 95 % intervals are wide (for example Hit@5 = 18/23 is consistent with a true value of 0.58 to 0.90 (Wilson)), so treat these numbers as a first reading, to be repeated on the full 50+ question set (Mia's Q026 to Q050 are not yet included).
+
 ## 4. Deliberate improvement: before and after (Week 10)
