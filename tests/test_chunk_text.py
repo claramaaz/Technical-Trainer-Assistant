@@ -20,6 +20,8 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 BODY = "tiro"      # Times-Roman (body text)
 H1 = "hebo"        # Helvetica-Bold (headings)
+SHORT = ("Each short paragraph in this section holds about thirty words so that twelve of them together "
+         "are far longer than the two hundred word cap set by the chunking rule.")
 LONG = ("The pitot tube measures ram air pressure for the airspeed indicator. " * 6).strip()
 
 
@@ -51,6 +53,12 @@ def make_handbook(path):
     p.insert_textbox(pymupdf.Rect(72, 80, 540, 140),
                      "should check the pitot heat as shown in Figure 1-1.",
                      fontname=BODY, fontsize=10)
+
+    # Page 1-3: a section made of 12 short paragraphs (12 x 30 words = 360 words).
+    p = page("1-3")
+    p.insert_text((72, 80), "Many Short Paragraphs", fontname=H1, fontsize=12)
+    for i in range(12):
+        p.insert_textbox(pymupdf.Rect(72, 95 + i * 50, 540, 140 + i * 50), SHORT, fontname=BODY, fontsize=10)
 
     # Page 2-1: a new chapter; its first paragraph has no heading of its own.
     p = page("2-1")
@@ -136,3 +144,12 @@ def test_figure_mentions_are_recorded(chunks):
     # "as shown in Figure 1-1" links the passage to its figure.
     c = next(c for c in chunks if "reads zero" in c["text"])
     assert c["figure_mentions"] == ["1-1"]
+
+def test_chunks_respect_the_word_cap(chunks):
+    # SPEC 5.1: at most 200 words per chunk. The only exception is a single
+    # paragraph that is longer than 200 words on its own (never cut a paragraph).
+    many = [c for c in chunks if c["heading_path"][-1:] == ["Many Short Paragraphs"]]
+    assert len(many) >= 2                                  # 360 words cannot fit in one chunk
+    assert all(c["words"] <= 200 for c in many)
+    for c in chunks:
+        assert c["words"] <= 200 or "\n\n" not in c["text"]
