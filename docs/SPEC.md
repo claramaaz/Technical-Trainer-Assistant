@@ -9,7 +9,7 @@
 | Course | Software Engineering — ESIB, Université Saint-Joseph |
 | Team Members | Mia Badran – Clara Maaz |
 | Instructor / Supervisor | Mr. Georges Salloum |
-| Version | 1.0 |
+| Version | 1.1 |
 | Date / Status | 19/10/2026 — Baseline, tagged `spec-v1` before the first implementation commit |
 
 ### 1.1 Change log
@@ -18,6 +18,7 @@
 | --- | --- | --- |
 | 0.1 | 04/10/2026 | First draft (Word). |
 | 1.0 | 19/10/2026 | Converted to Markdown. Added section 5 (chunking strategy, page numbering, evaluation metrics), FR-009 (answers with cited sources), low-confidence handling in FR-002, decisions for UC-04 A2 and UC-07, stack decisions (2.5), corrected cross-references. |
+| 1.1 | 28/10/2026 | 5.1: chunk size cap set to 200 words from the measurement of FAA-H-8083-15B; embedding model must accept ≥ 512 tokens; content covered by chunking listed. |
 
 Any later divergence from this document is recorded in this change log with its reason.
 
@@ -86,7 +87,7 @@ The FAA handbook index and PDF URLs remain stable. Figure extraction quality var
 | Frontend | React (responsive web, no native app) | Confirmed |
 | PDF extraction | PyMuPDF | Confirmed |
 | Figure images | Stored as files in object storage; the database stores their path | Confirmed |
-| Embedding model | Chosen in Week 3 on the baseline evaluation; recorded here when chosen | Open |
+| Embedding model | Chosen in Week 3 on the baseline evaluation; recorded here when chosen. Must accept at least 512 input tokens (5.1) | Open |
 | Language model for answers | Chosen in Week 4; recorded here when chosen | Open |
 | Hosting | Chosen before Week 6; recorded here when chosen | Open |
 | Task tracking | Jira | Confirmed (supervisor) |
@@ -246,6 +247,18 @@ Justification:
 - Storing pages per chunk gives every returned passage page-level provenance (BR-002).
 
 The size cap is not chosen in advance. In Week 2 the team measures the paragraph and section length distribution of the first handbook, sets the cap from it, and records the value and the measurement here.
+
+**Measurement and decision (28/10/2026, FAA-H-8083-15B, `python ingestion/chunk_text.py measure`).** Body text (figures, captions, front matter, table of contents and index excluded): 577 sections, 2,730 paragraphs, 140,352 words. Paragraph length: median 41 words, 90th percentile 107, 99th percentile 174, maximum 324.
+
+| Cap (words) | Chunks | Median chunk (words) | Paragraphs longer than the cap |
+| --- | --- | --- | --- |
+| 150 | 1,326 | 112 | 72 |
+| **200 (chosen)** | **1,080** | **138.5** | **15** |
+| 250 | 911 | 162 | 3 |
+
+**Cap = 200 words.** A chunk then holds two to four whole paragraphs on one topic, and only 15 paragraphs (0.5 %) exceed the cap; each of these becomes a chunk of its own rather than being split. Consequence for the embedding model (2.5): 200 words is about 260 tokens and the longest paragraph about 420, so the model must accept at least 512 input tokens, or long chunks would be silently truncated.
+
+Content covered: chapters 1–11, Appendix A, Appendix B and the Glossary (pages with a printed number such as 4-8, A-1, G-7). Not chunked: front matter, table of contents, Index, and dot-leader lists (e.g. the shorthand table in Appendix A), because they list page numbers or abbreviations rather than explain anything. Headings are recognised by font (Helvetica-Bold 12 pt, Helvetica-Bold 10 pt, Times-BoldItalic 11 pt) and never carry over into the next chapter.
 
 **Figure documents.** Each figure is also a search item of its own. Its searchable text is its caption, the paragraphs that reference it, and its section heading. A figure can then be found by what the handbook says about it, not only by its short caption. The figure image itself may additionally be embedded with an image model for joint text–image retrieval; whether this is kept is decided by measurement (5.3).
 

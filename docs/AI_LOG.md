@@ -87,3 +87,13 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **How we caught it:** Clara's review of 4-11 and 7-47; before/after contact sheets of the 13 crops that changed; drawing page 163 with its boxes; removing each rule on purpose (every remaining rule now has a test that fails without it).
 - **What we kept / changed:** 22 tests. Counts unchanged (347/347, 3 flagged); 13 crops changed since the morning run, each checked.
 - **Commit / PR:** branch `feature/P7-4-crop-fix`
+
+### 2026-10-28 (evening) — Chunking: measurement, 200-word cap, chunker
+- **Who:** Clara
+- **Tool:** Claude
+- **What we asked:** Measure paragraph and section lengths in FAA-H-8083-15B to choose the chunk size cap (SPEC 5.1), then write the chunker.
+- **What came back:** `ingestion/chunk_text.py` (`measure` and `chunk` commands): 1,080 chunks, cap 200 words chosen by us from the measurement (median chunk 138.5 words; 15 paragraphs longer than the cap kept whole), with heading path, chapter, PDF and printed pages and the figures each chunk mentions. SPEC 5.1 updated (v1.1). A test file with one example test and a list of cases for us to write.
+- **What was wrong with it:** (1) The first measurement found only 150 sections for 371 pages: it read whole text blocks, but in this PDF a heading often shares a block with the paragraph after it; reading line by line gives 577. (2) The table of contents and the Index were counted as paragraphs (one "paragraph" of 1,866 words). (3) Heading paths leaked across chapters (an Appendix A chunk was labelled with the last heading of chapter 11). (4) The chunker crashed instead of explaining when it found no text. (5) The example test passed even when the paragraph-joining rule was removed, because both halves still landed in the same chunk; it now checks the joined sentence.
+- **How we caught it:** Comparing the section count with the size of the handbook; reading the longest paragraphs and a random sample of chunks; checking the heading path of the first and last chunk of every chapter; checking that 99.6 % of the body text ends up in chunks; removing the joining rule on purpose.
+- **What we kept / changed:** All fixes kept. Tests: per brief 11.3 we write the chunker tests ourselves from the SPEC rules (one example given). Note: the 22 extractor tests were drafted by Claude from failure cases we found and checked by removing each fix; we reviewed them and can explain each one.
+- **Commit / PR:** branch for the chunking ticket
