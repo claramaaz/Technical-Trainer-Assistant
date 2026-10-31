@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Technical Training Assistant</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0 auto; padding: 12px; max-width: 720px; color: #1a1a1a; }
+  form { display: flex; gap: 8px; }
+  input { flex: 1; min-width: 0; font-size: 16px; padding: 10px; }
+  button { font-size: 16px; padding: 10px 16px; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin-top: 16px; }
+  .card img { width: 100%; height: auto; display: block; background: #f4f4f4; }
+  .caption { font-weight: 600; margin: 8px 0; }
+  .source { color: #555; font-size: 14px; margin-top: 8px; }
+  #none { margin-top: 24px; padding: 16px; border: 2px solid #b00020; border-radius: 8px; color: #b00020; font-weight: 700; font-size: 18px; text-align: center; }
+  #error { margin-top: 16px; color: #b00020; }
+  [hidden] { display: none; }
+</style>
+</head>
+<body>
+<h1>Ask the handbook</h1>
+<form id="form">
+  <input id="q" type="search" placeholder="e.g. What are the parts of the inner ear?" required aria-label="Question">
+  <button type="submit">Search</button>
+</form>
+<div id="none" role="alert" hidden>No adequate answer found in the handbook</div>
+<div id="error" role="alert" hidden></div>
+<div id="results"></div>
+<script>
+const form = document.getElementById("form"), box = document.getElementById("q");
+const none = document.getElementById("none"), err = document.getElementById("error"), out = document.getElementById("results");
+
+function el(tag, text, cls) {           // textContent only: handbook text is never parsed as HTML
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+
+form.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  none.hidden = true; err.hidden = true; out.replaceChildren();
+  try {
+    const r = await fetch("/search?q=" + encodeURIComponent(box.value));
+    if (!r.ok) throw new Error("Search failed (" + r.status + ")");
+    const data = await r.json();
+    if (data.reason === "no_adequate_answer" || data.results.length === 0) {
+      none.hidden = false;               // nothing else is shown
+      return;
+    }
+    for (const x of data.results) {
+      const card = el("div", undefined, "card");
+      const img = el("img"); img.src = x.image_url; img.alt = x.caption; img.loading = "lazy";
+      card.append(img, el("div", x.caption, "caption"));
+      if (x.passage) card.append(el("p", x.passage));
+      card.append(el("div", x.handbook + ", page " + x.printed_page, "source"));
+      out.append(card);
+    }
+  } catch (e) {
+    err.textContent = e.message; err.hidden = false;
+  }
+});
+</script>
+</body>
+</html>
