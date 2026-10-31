@@ -1,0 +1,60 @@
+Figure document retrieval: FAA-H-8083-15B, model BAAI/bge-small-en-v1.5
+347 figure documents, 23 answerable questions, 2 no-answer
+Documents without a referencing paragraph: 6; without a heading: 16 (10 of them have referencing paragraphs)
+Relevant figure: its figure_number is the question's expected figure_number
+Questions that cannot hit (figure not in figures.jsonl): 0
+
+[full document, with BGE query prefix]
+                           n   Hit@1   Hit@5   MRR@5  MRR full
+  all answerable          23   0.652   0.870   0.743     0.749
+  symptom                  3   0.667   0.667   0.667     0.672
+  topic                   20   0.650   0.900   0.754     0.761
+
+Per question (full document, with prefix): rank of the expected figure, '-' = none
+  Q001 fig   1-1 rank    1  top1 0.771 fig   1-1
+  Q002 fig   3-3 rank    1  top1 0.747 fig   3-3
+  Q003 fig   3-9 rank    1  top1 0.868 fig   3-9
+  Q004 fig   4-2 rank    1  top1 0.765 fig   4-2
+  Q005 fig   4-5 rank    1  top1 0.714 fig   4-5
+  Q006 fig   4-7 rank  107  top1 0.748 fig   7-7
+  Q007 fig   4-3 rank    1  top1 0.845 fig   4-3
+  Q008 fig   5-7 rank    1  top1 0.682 fig   5-7
+  Q009 fig  5-34 rank    1  top1 0.808 fig  5-34
+  Q010 fig  7-52 rank    1  top1 0.809 fig  7-52
+  Q011 fig  7-73 rank    4  top1 0.754 fig  11-3
+  Q012 fig   9-1 rank    2  top1 0.737 fig   2-1
+  Q013 fig  9-10 rank    1  top1 0.772 fig  9-10
+  Q014 fig  9-17 rank    2  top1 0.827 fig  9-19
+  Q015 fig 10-13 rank    3  top1 0.744 fig  7-45
+  Q016 fig 10-17 rank    2  top1 0.711 fig  7-21
+  Q017 fig  11-2 rank    1  top1 0.653 fig  11-2
+  Q018 fig 11-11 rank    8  top1 0.605 fig  10-1
+  Q019 fig 11-18 rank    1  top1 0.840 fig 11-18
+  Q020 fig   5-2 rank   62  top1 0.767 fig   6-8
+  Q021 fig  5-40 rank    1  top1 0.911 fig  5-40
+  Q022 fig  5-20 rank    1  top1 0.794 fig  5-20
+  Q023 fig  7-39 rank    1  top1 0.843 fig  7-39
+
+[full document, without query prefix]
+                           n   Hit@1   Hit@5   MRR@5  MRR full
+  all answerable          23   0.696   0.870   0.762     0.765
+  symptom                  3   0.667   0.667   0.667     0.671
+  topic                   20   0.700   0.900   0.777     0.779
+
+[ablation, with BGE query prefix: what goes into the document]
+                           n   Hit@1   Hit@5   MRR@5  MRR full
+  full                    23   0.652   0.870   0.743     0.749
+  caption+paragraphs      23   0.696   0.913   0.775     0.776
+  caption+heading         23   0.478   0.870   0.619     0.620
+  caption                 23   0.609   0.783   0.651     0.660
+
+[ablation, without query prefix: what goes into the document]
+                           n   Hit@1   Hit@5   MRR@5  MRR full
+  full                    23   0.696   0.870   0.762     0.765
+  caption+paragraphs      23   0.652   0.913   0.761     0.762
+  caption+heading         23   0.522   0.783   0.612     0.621
+  caption                 23   0.609   0.783   0.659     0.665
+
+No-answer questions: best cosine score (full document, with prefix); compare with the answerable top-1 scores above
+  Q024 0.580  What is the maximum passenger capacity of a Boeing 747?
+  Q025 0.626  How do you reset the flight computer on an Airbus A320?

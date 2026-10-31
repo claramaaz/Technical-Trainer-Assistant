@@ -126,4 +126,49 @@ Reading of the misses (our interpretation from reading the returned chunks, not 
 
 **Caveat on sample size.** The baseline uses 23 answerable questions, all written by one author; one question moves each metric by about 4 percentage points (1/23 = 0.043). The difference between the with and without prefix Hit@1 (0.609 vs 0.565) is one question. The 95 % intervals are wide (for example Hit@5 = 18/23 is consistent with a true value of 0.58 to 0.90 (Wilson)), so treat these numbers as a first reading, to be repeated on the full 50+ question set (Mia's Q026 to Q050 are not yet included).
 
+### 3.2 Figure documents, BAAI/bge-small-en-v1.5, no database
+
+Commands (from the repository root; `embed` writes one `figure_embeddings_<variant>_<model>.npy` per variant, `evaluate` reads them):
+`python evaluation/figure_retrieval.py embed FAA-H-8083-15B BAAI/bge-small-en-v1.5`
+`python evaluation/figure_retrieval.py evaluate FAA-H-8083-15B BAAI/bge-small-en-v1.5`
+Full output: [`evaluation/figure_results_BAAI_bge-small-en-v1.5.txt`](../evaluation/figure_results_BAAI_bge-small-en-v1.5.txt). The new functions (`heading_for`, `unique_heading`, `document_text`, `build_documents`) are covered by `tests/test_figure_retrieval.py`; the scoring functions are the ones of 3.1 (`first_hit_rank`, `summarize`, `table`), unchanged.
+
+**Setup (SPEC 5.1, figure documents).** One search document per figure of `figures.jsonl` (347): section heading, caption, then the paragraphs that reference the figure, one per line. Same model, same normalized vectors, same 23 answerable questions and same query prefix as 3.1. A figure is a hit when its `figure_number` is the question's expected figure; the rank is the position of that figure among the 347. This is again a proxy for the figure metrics of 5.3 (no human judgement of "related" figures, score 1).
+
+**Where the heading comes from.** `figures.jsonl` does not store it. It is taken from `chunks.jsonl`: the heading of the chunks that contain the figure's first referencing paragraph; if that paragraph is in no chunk, the heading of the chunks that contain its last 100 characters (the extracted paragraphs often have the heading text glued to their front, e.g. "Airspace Classification Airspace in the United States …", which the chunker had split off; matching only the whole paragraph left 104 figures without a heading, matching its end leaves 16). If those chunks have different headings, or the figure has no referencing paragraph, the heading of the chunks covering the figure's printed page, but only when they all share the same heading; otherwise the heading is left **empty** (no guessing). Result: 6 figures have no referencing paragraph and 16 have no heading (10 of them have referencing paragraphs). The first reference alone decides the heading, even when a figure is cited from several sections.
+
+**Questions that cannot hit:** none (all 23 expected figures are in `figures.jsonl`). Documents longer than the model limit: 2 of 347 (longest 536 tokens, limit 512); their last words are cut off.
+
+**Result** (figure rule, 23 answerable questions; the chunk rows are copied from 3.1):
+
+| Index | Query prefix | Hit@1 | Hit@5 | MRR@5 | MRR full |
+| --- | --- | --- | --- | --- | --- |
+| Chunks (1,080) | with | 0.609 (14/23) | 0.783 (18/23) | 0.688 | 0.701 |
+| **Figure documents (347)** | **with** | **0.652** (15/23) | **0.870** (20/23) | **0.743** | 0.749 |
+| Chunks (1,080) | without | 0.565 (13/23) | 0.783 (18/23) | 0.667 | 0.676 |
+| Figure documents (347) | without | 0.696 (16/23) | 0.870 (20/23) | 0.762 | 0.765 |
+
+By type (figure documents, with prefix): topic (20) Hit@1 0.650, Hit@5 0.900, MRR@5 0.754; symptom (3) Hit@1 0.667, Hit@5 0.667, MRR@5 0.667. As in 3.1, three symptom questions say very little.
+
+**Question by question** (rank of the expected figure; chunk rank from 3.1). Better with figure documents: Q008 18 → 1, Q011 9 → 4, Q016 10 → 2, Q017 2 → 1, Q018 52 → 8, Q020 466 → 62, Q021 2 → 1, Q014 3 → 2. Worse: Q006 1 → 107 and Q015 1 → 3. The other 13 are the same. Still outside the top 5: Q006 (107), Q020 (62), Q018 (8). Q006 ("How does temperature change with altitude …", expected 4-7 "Koch chart sample") is the one real loss: the figure's only referencing paragraph is a fragment ("a Koch Chart or a flight computer with a density altitude function. [Figure 4-7]") and its caption shares no word with the question, whereas the chunk citing it is about the atmosphere and density altitude. This is our reading of the texts, not tested.
+
+**What goes into the document** (ablation, with prefix; same questions):
+
+| Document text | Hit@1 | Hit@5 | MRR@5 | MRR full |
+| --- | --- | --- | --- | --- |
+| Caption only | 0.609 (14/23) | 0.783 (18/23) | 0.651 | 0.660 |
+| Heading + caption | 0.478 (11/23) | 0.870 (20/23) | 0.619 | 0.620 |
+| Caption + referencing paragraphs | 0.696 (16/23) | 0.913 (21/23) | 0.775 | 0.776 |
+| **Heading + caption + paragraphs (SPEC 5.1)** | 0.652 (15/23) | 0.870 (20/23) | 0.743 | 0.749 |
+
+Without the prefix (Hit@1 / Hit@5: caption 0.609 / 0.783, heading + caption 0.522 / 0.783, caption + paragraphs 0.652 / 0.913, full 0.696 / 0.870) the full document and caption + paragraphs swap places on Hit@1. What holds in both settings: adding the referencing paragraphs to the caption helps (with prefix +2 questions at Hit@1 and +3 at Hit@5; without prefix +1 and +3). The effect of the heading is mixed: with the prefix it lowers Hit@1 (caption 14 → 11 questions, caption + paragraphs 16 → 15); without the prefix it raises Hit@1 for caption + paragraphs (15 → 16) and lowers its Hit@5 (21 → 20). The differences are one to three questions, so we do not conclude that the heading should be kept or dropped; we only note that the SPEC 5.1 composition is not clearly better than caption + paragraphs on this set.
+
+**No-answer questions.** Best cosine score over all figure documents (full, with prefix): 0.580 for Q024 and 0.626 for Q025. The lowest top-1 score among answerable questions is 0.605 (Q018), so a single threshold would still not separate them.
+
+**Caveats.**
+- *Different candidate pools.* The chunk baseline ranks 1,080 chunks, the figure index ranks 347 figures. Ranking among fewer candidates makes a top-5 hit easier by itself, so the Hit@5 and MRR gap between the two rows is not a like-for-like gain from the figure documents.
+- *Questions written from the figures.* Clara wrote the questions while viewing the caption and the referencing paragraph of each figure. Wording taken from those texts is exactly what a figure document contains, so this set may favour figure documents over chunks, and over the real use, where a learner has not seen the figure. A set written from symptoms, without looking at the figures, is needed before drawing a conclusion.
+- *Sample size.* 23 questions, one author: one question moves a metric by about 4.3 points. Every difference above is between one and three questions. With versus without the prefix, the figure-document result goes the other way from 3.1 for Hit@1 (0.696 without, 0.652 with), again one question.
+- *Heading rule.* The heading of 10 figures that have referencing paragraphs, and of the figures with no reference, may be empty; the first reference alone decides the heading.
+
 ## 4. Deliberate improvement: before and after (Week 10)
