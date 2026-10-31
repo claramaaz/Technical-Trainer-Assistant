@@ -51,7 +51,7 @@ Flagged for review (v6): 5-7, 6-33, 10-10. The flag fires when at least half of 
 
 **Visual review of v6:** Clara judged all v5 figures good except 4-11 (axis titles cut) and 7-47 (sky strip cut). The 13 crops that changed in v6 were compared before/after; 7-3 regressed during the work (took 7-1's panel) and was fixed. The 12 sideways figures (1-8, 1-9, 1-11, 1-12, 1-16, 1-18 to 1-22, 1-24, 10-18) are saved upright.
 
-**Comparison with the figure list in the handbook** (the brief asks for this): *(how many figures the handbook itself numbers, per chapter, compared with the captions found; explain any gap)*
+**Comparison with the figure list in the handbook** (the brief asks for this). The handbook has no List of Figures (its front matter has only a table of contents), so completeness was checked another way. (1) Figures are numbered in sequence within each chapter; for each of the 11 chapters the extracted numbers are exactly 1..max with no gap (24, 16, 9, 23, 60, 39, 75, 20, 43, 20, 18 = 347). (2) An independent count of every text block in the PDF starting "Figure N-N." finds 347 captions, none missing from figures.jsonl. No "Figure A-1"-style captions exist. Limit: this covers captioned figures only; uncaptioned graphics are the 31 unbound regions in the QA queue.
 
 ### 1.2 Manual check of figure–caption pairs
 
