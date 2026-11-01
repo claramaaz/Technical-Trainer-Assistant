@@ -73,6 +73,7 @@ docker compose ps
 - Data lives in the Docker volume `p7_pgdata` and survives `docker compose down`.
   `docker compose down -v` deletes the volume and all data.
 - Create or update the tables (safe to run again): `python ingestion\migrate.py`. It applies the numbered files in `db\migrations\` and records them in `schema_migrations`.
+- Load an extracted handbook (after `migrate.py`): `python ingestion\load_db.py FAA-H-8083-15B`. It can be run again; `--reset` deletes that handbook's rows and loads from scratch. A handbook whose licence is empty or "unknown" in `corpus\handbooks.csv` is loaded but not searchable.
 - Stop: `docker compose down`.
 
 ## Git workflow
