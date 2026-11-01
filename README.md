@@ -54,6 +54,25 @@ python -m pytest -q                                          # tests
 
 Downloaded PDFs and extracted figures go to `data/`, which is not committed.
 
+## Database (PostgreSQL + pgvector, in Docker)
+The database runs in a Docker container (image `pgvector/pgvector:0.8.7-pg17`); it is
+not installed on Windows. Requires Docker Desktop to be running.
+
+```powershell
+Copy-Item .env.example .env          # then edit .env and choose your own POSTGRES_PASSWORD
+docker compose up -d                 # starts the database; wait until it is "healthy"
+docker compose ps
+"CREATE EXTENSION IF NOT EXISTS vector;" | docker compose exec -T db sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'
+```
+
+- `.env` holds the credentials and is never committed; `.env.example` is the committed template.
+- The database listens on `127.0.0.1:5433` (this computer only). Port 5433 and not 5432 avoids a clash with a
+  PostgreSQL that may already be installed on Windows. Change `POSTGRES_PORT` in `.env` if 5433 is taken.
+- Connect from Python with `postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5433/<POSTGRES_DB>`.
+- Data lives in the Docker volume `p7_pgdata` and survives `docker compose down`.
+  `docker compose down -v` deletes the volume and all data.
+- Stop: `docker compose down`.
+
 ## Git workflow
 - `main` is protected; work happens on branches named `feature/P7-<ticket>-<short-name>`
 - Every change goes through a pull request reviewed by the other teammate
