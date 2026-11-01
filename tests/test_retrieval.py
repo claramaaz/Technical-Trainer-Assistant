@@ -81,3 +81,12 @@ def test_image_file_that_exists_but_is_not_in_the_index_is_not_served(real_index
                     real_index.vectors, real_index.handbook)
     monkeypatch.setattr(retrieval, "load_index", lambda: without)
     assert retrieval.image_path_for("3-9") is None
+
+
+def test_results_do_not_contain_the_server_file_path():
+    # The browser only needs image_url; the path of the file on the server must not be sent.
+    out = retrieve("q", index=fake_index(0.9, 0.8), query_vector=np.array([1.0, 0.0]))
+    for r in out["results"]:
+        assert "image_path" not in r
+        assert "x.png" not in str(r)
+        assert r["image_url"].startswith("/figures/")

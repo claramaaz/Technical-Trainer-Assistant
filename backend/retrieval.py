@@ -114,7 +114,6 @@ def retrieve(query, k=5, index=None, query_vector=None):
         results.append({
             "figure_id": d["figure_number"],
             "caption": d["caption"],
-            "image_path": str(d["image_path"]),
             "image_url": f"/figures/{d['figure_number']}/image",
             "passage": d["passage"],
             "handbook": index.handbook,
