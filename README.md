@@ -68,9 +68,12 @@ docker compose ps
 - `.env` holds the credentials and is never committed; `.env.example` is the committed template.
 - The database listens on `127.0.0.1:5433` (this computer only). Port 5433 and not 5432 avoids a clash with a
   PostgreSQL that may already be installed on Windows. Change `POSTGRES_PORT` in `.env` if 5433 is taken.
-- Connect from Python with `postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5433/<POSTGRES_DB>`.
+- Use `127.0.0.1`, not `localhost`: `localhost` tries IPv6 first and each connection then waits about 10 seconds.
+- Connect from Python with `postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@127.0.0.1:5433/<POSTGRES_DB>`.
 - Data lives in the Docker volume `p7_pgdata` and survives `docker compose down`.
   `docker compose down -v` deletes the volume and all data.
+- Create or update the tables (safe to run again): `python ingestion\migrate.py`. It applies the numbered files in `db\migrations\` and records them in `schema_migrations`.
+- Load an extracted handbook (after `migrate.py`): `python ingestion\load_db.py FAA-H-8083-15B`. It can be run again; `--reset` deletes that handbook's rows and loads from scratch. A handbook whose licence is empty or "unknown" in `corpus\handbooks.csv` is loaded but not searchable.
 - Stop: `docker compose down`.
 
 ## Git workflow
