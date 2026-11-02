@@ -1,13 +1,16 @@
 """Tests for backend/retrieval.py.   Run from the repository root:   python -m pytest -q tests/test_retrieval.py
 
-Three tests use the real index and the real model (the first run loads the model, a few seconds);
-the boundary tests use a tiny made-up index so the expected scores are known exactly.
+Tests with real_index use the real database (skipped with a message if PostgreSQL is not running or
+holds no loaded handbook) and the real model (the first run loads the model, a few seconds).
+The boundary tests use a tiny made-up index held in memory, ranked with numpy instead of the
+database, so the expected scores are known exactly. Database tests: tests/test_retrieval_db.py.
 """
 import numpy as np
 import pytest
 
 from backend import retrieval
 from backend.retrieval import Index, NO_ANSWER, THRESHOLD, retrieve
+from fake_index import make_fake
 
 # Known questions with a wide margin (rank 1, top-1 score 0.868 / 0.911 / 0.840 in EVALUATION 3.2).
 KNOWN = ["Q003", "Q021", "Q019"]
@@ -39,7 +42,7 @@ def fake_index(*scores):
     vectors = np.array([[s, (1 - s * s) ** 0.5] for s in scores])
     docs = [{"figure_number": f"9-{i}", "caption": f"Figure 9-{i}. x", "image_path": "x.png",
              "passage": "p", "printed_page": f"9-{i}"} for i in range(len(scores))]
-    return Index(docs, vectors, "Test Handbook")
+    return make_fake(docs, vectors)
 
 
 def test_score_just_below_threshold_is_rejected():
@@ -77,8 +80,8 @@ def test_image_file_that_exists_but_is_not_in_the_index_is_not_served(real_index
     # figures/3-9.png exists on disk, but if 3-9 is not in the index the id must not be served:
     # the path is taken from the index, never built from the URL.
     assert retrieval.image_path_for("3-9") is not None
-    without = Index([d for d in real_index.documents if d["figure_number"] != "3-9"],
-                    real_index.vectors, real_index.handbook)
+    without = Index({i: d for i, d in real_index.documents.items() if d["figure_number"] != "3-9"},
+                    real_index.handbook, real_index.dsn)
     monkeypatch.setattr(retrieval, "load_index", lambda: without)
     assert retrieval.image_path_for("3-9") is None
 
