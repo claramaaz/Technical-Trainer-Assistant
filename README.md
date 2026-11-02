@@ -13,11 +13,11 @@ It is built to work on a phone with a slow connection.
 - Supervisor: Mr. Georges Salloum
 
 ## Status
-Week 0 of 12. Specification tagged (`spec-v1`). Working on the Week 1 gate: one handbook ingested with figure and caption counts.
+Week 1 gate passed (24 Oct). Current milestone: Week 3 (baseline retrieval and the 50-question evaluation set).
 
 ## Links
 - Deployed application: *not deployed yet*
-- Task board (Jira): *to be created*
+- Task board (Jira): https://net-team-tx469yp7.atlassian.net/browse/P7
 
 ## Documents
 - [docs/SPEC.md](docs/SPEC.md): software requirements specification
@@ -75,6 +75,25 @@ docker compose ps
 - Create or update the tables (safe to run again): `python ingestion\migrate.py`. It applies the numbered files in `db\migrations\` and records them in `schema_migrations`.
 - Load an extracted handbook (after `migrate.py`): `python ingestion\load_db.py FAA-H-8083-15B`. It can be run again; `--reset` deletes that handbook's rows and loads from scratch. A handbook whose licence is empty or "unknown" in `corpus\handbooks.csv` is loaded but not searchable.
 - Stop: `docker compose down`.
+
+## Run the application
+The web page in `frontend/index.html` is a **prototype**: a single HTML page served by the backend.
+The React search page required by SPEC 2.5 comes with the Week 5 milestone.
+
+Full run order, from the repository root (Windows PowerShell, Docker Desktop running):
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env          # then edit .env and choose your own POSTGRES_PASSWORD
+docker compose up -d                 # wait until the database is "healthy"
+python ingestion\migrate.py
+python ingestion\load_db.py FAA-H-8083-15B
+python -m uvicorn backend.app:app
+```
+
+Then open http://127.0.0.1:8000 in a browser.
 
 ## Git workflow
 - `main` is protected; work happens on branches named `feature/P7-<ticket>-<short-name>`
