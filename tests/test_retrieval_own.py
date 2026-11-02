@@ -1,6 +1,7 @@
 import numpy as np
 
-from backend.retrieval import Index, NO_ANSWER, THRESHOLD, retrieve
+from backend.retrieval import NO_ANSWER, THRESHOLD, retrieve
+from fake_index import make_fake
 
 QUERY = np.array([1.0, 0.0])  # the "question" vector
 
@@ -15,7 +16,7 @@ def make_index(score):
         "passage": "Some text.",
         "printed_page": "9-4",
     }
-    return Index([doc], vector, "Test Handbook")
+    return make_fake([doc], vector)
 
 
 def test_score_064_gives_no_answer():

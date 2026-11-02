@@ -1,32 +1,34 @@
-"""Search over the figure documents (baseline v2, SPEC 5.1), no database.
+"""Search over the figure documents (baseline v2, SPEC 5.1), reading from PostgreSQL.
 
 retrieve(query, k) embeds the question with the same model and query prefix as
-evaluation/figure_retrieval.py, ranks the figure documents by cosine similarity
-and returns the top k, or an empty result when the best score is too low.
+evaluation/figure_retrieval.py, asks the database for the k figures nearest to it and
+returns them, or an empty result when the best score is too low.
 
-All data access is in load_index(). It is the ONLY function that reads files
-(figures.jsonl, chunks.jsonl, the embeddings, the handbook name). When the
-pgvector database is ready, replace load_index() (and rank(), which does the
-dot product) and nothing else has to change.
+All data access is in load_index() (descriptions of the figures) and rank() (the
+nearest-neighbour query). They read ONLY the views searchable_figures and
+searchable_figure_refs, never the tables, so a document with an unknown licence, or
+one that is not fully loaded, can never be returned (BR-001). There is no file-based
+fallback any more.
 
-Paths are built from this file's location, so it works from any directory.
+Connection: POSTGRES_* variables from the environment or .env, host 127.0.0.1 (the
+same code as ingestion/migrate.py and the loader).
 """
-import csv
 import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-import numpy as np
+import psycopg
+from pgvector.psycopg import register_vector
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "evaluation"))
-# Reused, not copied: the document text, the heading rule and the query prefix are
-# exactly the ones that were evaluated.
+sys.path.insert(0, str(ROOT / "ingestion"))
+# Reused, not copied: the query prefix is the one that was evaluated, and the
+# connection settings are the ones the loader uses.
 from baseline_retrieval import QUERY_PREFIX, load_model  # noqa: E402
-from figure_retrieval import build_documents, load_jsonl, paths  # noqa: E402
+from migrate import connection_string  # noqa: E402
 
-HANDBOOK_ID = "FAA-H-8083-15B"
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
 # PROVISIONAL. Chosen by looking at the scores of the same 23 answerable questions
@@ -40,45 +42,53 @@ NO_ANSWER = "no_adequate_answer"
 
 @dataclass
 class Index:
-    documents: list      # one dict per figure: figure_number, caption, image_path, passage, printed_page
-    vectors: np.ndarray  # normalized, row i = documents[i]
+    documents: dict  # database figure id -> dict: figure_number, caption, image_path, passage, printed_page
     handbook: str
+    dsn: str         # how rank() reaches the database
 
 
-def handbook_title(handbook_id):
-    with open(ROOT / "corpus" / "handbooks.csv", encoding="utf-8-sig", newline="") as fh:
-        for row in csv.DictReader(fh):
-            if row["id"] == handbook_id:
-                return row["title"]
-    return handbook_id
+# One row per searchable figure; the passage is the first citing paragraph (position 0).
+DESCRIBE_SQL = """
+    SELECT f.id, f.figure_number, f.caption, f.image_path, f.printed_page, f.handbook,
+           (SELECT r.text FROM searchable_figure_refs r WHERE r.figure_id = f.id AND r.position = 0)
+    FROM searchable_figures f
+    ORDER BY f.id"""
+
+# Score = 1 - cosine distance. The id breaks ties so the order is always the same.
+RANK_SQL = """
+    SELECT id, 1 - (embedding <=> %(q)s) AS score
+    FROM searchable_figures
+    ORDER BY embedding <=> %(q)s, id
+    LIMIT %(k)s"""
+
+
+def connect(dsn):
+    conn = psycopg.connect(dsn)
+    register_vector(conn)
+    return conn
+
+
+def load_index_from(dsn):
+    """Describe every searchable figure (no vectors: the database does the ranking)."""
+    with connect(dsn) as conn:
+        rows = conn.execute(DESCRIBE_SQL).fetchall()
+    documents = {}
+    for fid, number, caption, image_key, printed_page, _handbook, passage in rows:
+        documents[fid] = {
+            "figure_number": number,
+            "caption": caption,
+            # image_path is a relative key such as FAA-H-8083-15B/figures/4-12.png
+            "image_path": ROOT / "data" / "extracted" / image_key,
+            "passage": passage or "",
+            "printed_page": printed_page,
+        }
+    return Index(documents, rows[0][5] if rows else "", dsn)
 
 
 @lru_cache(maxsize=1)
 def load_index():
-    """Read all data from the files. Replace this function when moving to pgvector."""
-    folder = ROOT / "data" / "extracted" / HANDBOOK_ID
-    figures = load_jsonl(folder / "figures.jsonl", "run ingestion/extract_figures.py first.")
-    chunks = load_jsonl(folder / "chunks.jsonl", "run ingestion/chunk_text.py chunk first.")
-    emb_path = ROOT / paths(HANDBOOK_ID, MODEL_NAME, "full")[2]
-    if not emb_path.exists():
-        raise FileNotFoundError(f"{emb_path} not found: run evaluation/figure_retrieval.py embed first.")
-    vectors = np.load(emb_path)
-    if len(vectors) != len(figures):
-        raise ValueError(f"{emb_path.name} has {len(vectors)} rows but figures.jsonl has {len(figures)} figures")
-    # Same figure order as the embeddings (row i = line i of figures.jsonl); the
-    # evaluated document text is reused, not rebuilt, by build_documents.
-    docs = build_documents(figures, chunks)
-    documents = []
-    for f, doc in zip(figures, docs):
-        refs = f["referencing_paragraphs"]
-        documents.append({
-            "figure_number": doc["figure_number"],
-            "caption": f["caption"],
-            "image_path": folder / f["image_path"],
-            "passage": refs[0]["text"] if refs else "",
-            "printed_page": f["printed_page"],
-        })
-    return Index(documents, vectors, handbook_title(HANDBOOK_ID))
+    """The index for the configured database. Read once; restart after loading a new handbook."""
+    return load_index_from(connection_string())
 
 
 @lru_cache(maxsize=1)
@@ -91,10 +101,10 @@ def embed_query(query):
 
 
 def rank(index, query_vector, k):
-    """(row, score) of the k best documents, best first."""
-    scores = index.vectors @ query_vector
-    order = np.argsort(-scores)[:k]
-    return [(int(i), float(scores[i])) for i in order]
+    """(figure id, score) of the k best searchable figures, best first. Done by the database."""
+    with connect(index.dsn) as conn:
+        rows = conn.execute(RANK_SQL, {"q": query_vector, "k": k}).fetchall()
+    return [(int(fid), float(score)) for fid, score in rows]
 
 
 def retrieve(query, k=5, index=None, query_vector=None):
@@ -125,7 +135,7 @@ def retrieve(query, k=5, index=None, query_vector=None):
 
 def image_path_for(figure_id):
     """Image file of a figure, or None if the id is not in the index (never built from user text)."""
-    for d in load_index().documents:
+    for d in load_index().documents.values():
         if d["figure_number"] == figure_id:
             return d["image_path"] if d["image_path"].is_file() else None
     return None

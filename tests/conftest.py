@@ -8,7 +8,15 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-EMB = ROOT / "data" / "extracted" / "FAA-H-8083-15B" / "figure_embeddings_full_BAAI_bge-small-en-v1.5.npy"
+
+@pytest.fixture(autouse=True)
+def rank_fake_indexes_with_numpy(monkeypatch):
+    """A FakeIndex (tests/fake_index.py) is ranked with numpy; any other index goes to the real rank() (database)."""
+    from backend import retrieval
+    from fake_index import FakeIndex, numpy_rank
+    real_rank = retrieval.rank
+    monkeypatch.setattr(retrieval, "rank", lambda index, q, k: (numpy_rank if isinstance(index, FakeIndex)
+                                                               else real_rank)(index, q, k))
 
 
 @pytest.fixture(scope="session")
@@ -19,10 +27,19 @@ def questions():
 
 @pytest.fixture(scope="session")
 def real_index():
-    if not EMB.exists():
-        pytest.skip("data/extracted/... figure embeddings missing: run evaluation/figure_retrieval.py embed")
+    """The search index of the real database (read only). Skipped if PostgreSQL or the data is missing."""
+    import psycopg
+
     from backend.retrieval import load_index
-    return load_index()
+    try:
+        index = load_index()
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"PostgreSQL is not running ({str(exc).strip()[:80]}); start it with: docker compose up -d")
+    except psycopg.errors.UndefinedTable:
+        pytest.skip("the database has no tables: run python ingestion/migrate.py")
+    if not index.documents:
+        pytest.skip("no searchable figures in the database: run python ingestion/load_db.py FAA-H-8083-15B")
+    return index
 
 
 # ---------------------------------------------------------------------------
