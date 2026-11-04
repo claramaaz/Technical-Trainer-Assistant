@@ -1,0 +1,32 @@
+/* Mobile first: one column that fills the screen; capped on desktop. */
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  color: #1a1a1a;
+}
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12px;
+}
+h1 { font-size: 1.5rem; }
+.search { display: flex; gap: 8px; }
+.search input { flex: 1; min-width: 0; font-size: 16px; padding: 10px; } /* 16px: no zoom on iOS */
+.search button { font-size: 16px; padding: 10px 16px; }
+.hint { color: #555; margin-top: 16px; }
+.error { color: #b00020; margin-top: 16px; }
+.no-answer {
+  margin-top: 24px;
+  padding: 16px;
+  border: 2px solid #b00020;
+  border-radius: 8px;
+  color: #b00020;
+  font-weight: 700;
+  font-size: 18px;
+  text-align: center;
+}
+.card { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin-top: 16px; }
+.card img { width: 100%; height: auto; display: block; background: #f4f4f4; }
+.caption { font-size: 1rem; font-weight: 600; margin: 8px 0; }
+.passage { overflow-wrap: anywhere; }
+.source { color: #555; font-size: 14px; margin: 8px 0 0; }

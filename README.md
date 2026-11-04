@@ -54,6 +54,28 @@ python -m pytest -q                                          # tests
 
 Downloaded PDFs and extracted figures go to `data/`, which is not committed.
 
+## Web page (React, in `frontend/`)
+Requires Node.js 20+. The search page is a Vite + React app.
+
+```powershell
+# Development: two terminals (PostgreSQL must be running: docker compose up -d)
+python -m uvicorn backend.app:app --port 8000      # terminal 1, from the repository root
+cd frontend
+npm install                                         # first time only
+npm run dev                                         # terminal 2, open http://localhost:5173
+
+# Production build: FastAPI serves frontend/dist at http://127.0.0.1:8000/
+cd frontend
+npm run build
+cd ..
+python -m uvicorn backend.app:app
+```
+
+In development Vite forwards `/search` and `/figures` to `http://127.0.0.1:8000`. If `frontend/dist` does not exist, `/` answers 503 with a reminder to run `npm run build`; `/health`, `/search` and `/figures/{id}/image` work either way.
+
+## Known limitations
+- TODO: low-confidence notice (SPEC FR-002). The API does not return a low-confidence class yet, so the page cannot show the notice.
+
 ## Database (PostgreSQL + pgvector, in Docker)
 The database runs in a Docker container (image `pgvector/pgvector:0.8.7-pg17`); it is
 not installed on Windows. Requires Docker Desktop to be running.
