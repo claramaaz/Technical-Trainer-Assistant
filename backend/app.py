@@ -1,4 +1,5 @@
-"""FastAPI app: GET /search, GET /figures/{id}/image, GET /health, and the page at /.
+"""FastAPI app: GET /search, GET /figures/{id}/image, GET /health, and the React page at /
+(the built files in frontend/dist; create them with: cd frontend && npm run build).
 
 Run from the repository root:   python -m uvicorn backend.app:app
 No login yet.
@@ -7,12 +8,17 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.retrieval import image_path_for, retrieve
 
-FRONTEND = Path(__file__).resolve().parent.parent / "frontend" / "index.html"
+DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 app = FastAPI(title="Technical Training Assistant")
+
+# JS and CSS files of the build. Mounted only if the build exists, so the API still starts without it.
+if (DIST / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
 
 
 @app.get("/health")
@@ -38,4 +44,7 @@ def figure_image(figure_id: str):
 
 @app.get("/")
 def page():
-    return FileResponse(FRONTEND, media_type="text/html")
+    index = DIST / "index.html"
+    if not index.is_file():
+        raise HTTPException(status_code=503, detail="Frontend not built. Run: cd frontend && npm install && npm run build")
+    return FileResponse(index, media_type="text/html")

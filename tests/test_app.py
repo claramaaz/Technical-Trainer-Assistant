@@ -49,6 +49,14 @@ def test_image_unknown_or_traversal_is_404(fid, real_index):
     assert client.get(f"/figures/{fid}/image").status_code == 404
 
 
-def test_page_is_served():
+def test_page_is_served_when_build_exists(tmp_path, monkeypatch):
+    # A tiny fake build, so the test needs neither Node nor a real "npm run build".
+    (tmp_path / "index.html").write_text("<!doctype html><div id='root'></div>", encoding="utf-8")
+    monkeypatch.setattr("backend.app.DIST", tmp_path)
     r = client.get("/")
-    assert r.status_code == 200 and "No adequate answer found in the handbook" in r.text
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"] and "id='root'" in r.text
+
+
+def test_page_without_build_is_503(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.app.DIST", tmp_path)  # empty folder: no build
+    assert client.get("/").status_code == 503

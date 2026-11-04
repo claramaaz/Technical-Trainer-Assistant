@@ -16,8 +16,9 @@ venv/
 .ipynb_checkpoints/
 .pytest_cache/
 
-# Frontend (later)
+# Frontend
 node_modules/
+dist/
 
 # Editors / OS
 .vscode/
