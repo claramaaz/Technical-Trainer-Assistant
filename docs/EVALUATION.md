@@ -81,6 +81,57 @@ With 20 pairs, 20/20 is consistent with a true caption-binding accuracy anywhere
 | Found by Clara after v4 (28 Oct): 6-6 and 7-49 missing; caption inside 1-18, 1-19, 5-37, 10-1; 5-38 inside 5-37, 5-51 inside 5-52; text in 6-5, 6-7, 6-37, 7-47, 1-17; 6-35, 8-5, 6-20 cut off | 15 figures | Side-by-side figures joined across the ~11 pt column gap; an oversized image keeping other figures' ink; the 6 pt image margin reaching into the caption; labels and separate side pieces left outside the box | **Fixed in v5 (P7-5)**, each case checked by eye on its page |
 | Excel converted figure numbers to dates while judging ("1-20" became "20-Jan") | all 20 rows | Excel's automatic date detection when opening a CSV | Fixed: `sample_check.py score` restores both columns from `figures.jsonl`. The committed evidence file has the restored values; the y/n judgements are unchanged. |
 
+### 1.4 Second handbook: FAA-H-8083-25C, Pilot's Handbook of Aeronautical Knowledge (P7-18)
+
+**Source chain:** the official index (https://www.faa.gov/regulations_policies/handbooks_manuals/aviation) lists no `.pdf` named `faa-h-8083-25c.pdf`; it links "Pilot's Handbook of Aeronautical Knowledge (FAA-H-8083-25C)" to the PHAK page (https://www.faa.gov/regulations_policies/handbooks_manuals/aviation/phak). That page links "Pilot's Handbook of Aeronautical Knowledge, FAA-H-8083-25C (Full Version)" to `/regulations_policies/handbooks_manuals/aviation/faa-h-8083-25c.pdf`, with no redirect. So: index → PHAK page → PDF. The chain is recorded in the `source_note` column of `corpus/handbooks.csv`.
+**Source URL:** https://www.faa.gov/regulations_policies/handbooks_manuals/aviation/faa-h-8083-25c.pdf
+**Licence:** United States Government work, public domain
+**Retrieved:** 2026-11-04T19:05:30Z by `ingestion/download_handbook.py` (HEAD before download: HTTP 200, `application/pdf`, Last-Modified 17 Jul 2023)
+**File size / SHA-256:** 77,598,564 bytes (equal to the HEAD Content-Length) / `247929cace0ab56b376e683eba540cc4c8f39f199ab35414e8b604e24f395cb7`
+
+Commands: `python ingestion/inspect_pdf.py data/raw/FAA-H-8083-25C.pdf`, `python ingestion/extract_figures.py data/raw/FAA-H-8083-25C.pdf`, `python ingestion/chunk_text.py chunk data/raw/FAA-H-8083-25C.pdf`. Nothing is loaded into the database yet.
+
+**Counts before and after the extractor fix** (from `data/extracted/FAA-H-8083-25C/report.json`):
+
+| | First run (before the fix) | Fix, first attempt | Final |
+| --- | --- | --- | --- |
+| PDF pages | 522 | 522 | 522 |
+| Captions found | 494 | 502 | **502** |
+| Bound to a caption | 494 | 501 | **502 (100 %)** |
+| Captions with no figure region | 0 | 1 (17-23) | **0** |
+| Unbound graphic regions | 45 | 44 | **42** |
+| Flagged `needs_review` | 31 | 32 | **32** (30 "crop contains a body paragraph", 2 "caption number does not match the chapter of the printed page") |
+| Figures with at least one referencing paragraph | 490 | | 498 |
+| Text chunks | 1,740 | | 1,739 |
+
+Captions per chapter after the fix: 1: 25, 2: 24, 3: 22, 4: 8, 5: 71, 6: 25, 7: 49, 8: 39, 9: 10, 10: 12, 11: 33, 12: 29, 13: 21, 14: 60, 15: 9, 16: 40, 17: 25 (502, with 6-48 counted under chapter 6 and 10-31 under chapter 10 as printed).
+
+**What the fix was.** In 25C, 8 pairs of side-by-side figures have their two captions stored as ONE text block (PDF pages 17, 33, 103, 123, 165, 233, 338, 450). The extractor read the block as one caption and lost the second figure: 1-1, 1-22, 5-8, 5-40, 7-8, 9-4, 14-2, 17-24. `text_blocks()` now cuts such a block into one piece per line that starts with "Figure N-M."; a wrapped second line joins the caption that starts nearest to it on the left. Result: all 8 figures are bound, and each caption is bound to its own image (looked at on contact sheets, e.g. 1-1 Leonardo's drawing and 1-2 the Cayley glider; before the fix 1-2 was bound to Leonardo's drawing, i.e. the pair was wrong, not only incomplete).
+
+**A regression found and fixed on the way.** With separate captions the extractor drew a boundary halfway between them, and the boundary cut anything it crossed. Because the 25C captions are much narrower than their figures, it cut the full-width Figure 17-23 (left without an image, 17-23 became "caption only") and the right side of 17-24, 9-2, 9-1 and 5-38. Fix: the boundary applies only below the lowest body-text paragraph it crosses, and a box is cut at the boundary only when it reaches over by at most 16 pt (the 3 pt strip it was made for, 7-1 / 7-3 in 15B); a wider figure is kept whole, and merging across the line stays blocked. The same change repaired 15 figures that the first 25C run had cropped too narrow (1-3, 5-23, 5-35, 5-36, 5-47, 5-56, 5-57, 6-1, 6-2, 6-8, 6-17, 10-2, 14-6, 14-7, 16-35; 5-35 had lost two of its three panels to the unbound list). Tests added: `tests/test_extract_figures.py` (one block with two captions gives two figures with the right numbers and texts; the boundary does not cut wide figures; the chapter-mismatch flag). The new tests fail on the code before the fix. **FAA-H-8083-15B is unchanged:** `figures.jsonl` is byte-identical before and after (347 captions, 347 bound, the same 3 flags 5-7, 6-33, 10-10, the same 31 unbound regions, same report). The 15B PNG files were not compared byte by byte (no copy of the old ones was kept); their boxes in `figures.jsonl` are identical and the drawing code did not change.
+
+**Comparison with the handbook's list of figures.** This PDF has **no List of Figures** (front matter: preface, contributors, a chapter and section table of contents), so the comparison used the body text instead: (1) for each chapter, the figure numbers extracted from captions, compared with 1..highest number; (2) every "Figure X-Y" mentioned anywhere in the text, compared with the captions. After the fix, every captioned figure is mentioned in the text, and the only mentioned numbers without a caption under that number are the four below. The inspector's own "numbering gaps" line (`inspect_pdf.py`) reads captions block by block, so its count (494) still lacks the 8 figures above; it was not changed, and its long gaps (ch. 6: 25 to 47, ch. 10: 12 to 30) are not missing figures (see 1.4 errors).
+
+**Errors in the handbook itself (the extractor is right):**
+
+| What | Where | Detail | Handling |
+| --- | --- | --- | --- |
+| Caption "Figure 6-48" is printed in chapter 7 | PDF page 200, printed page 7-40 | The text calls it "Figure 7-48" (deicing boots) | Number kept as printed; `needs_review`: "caption number does not match the chapter of the printed page" |
+| Caption "Figure 10-31" is printed in chapter 11 | PDF page 282, printed page 11-26 | The text calls it "Figure 11-31" (crosswind component chart) | Same |
+| Text refers to "Figure 4-51" | PDF page 137 | No such figure; the next caption on the page is 5-60 (probably meant) | Not a figure; stays unmatched |
+| Text refers to "Figure 10-32" | PDF page 282 | No such figure; chapter 11 has 11-32, a landing distance table (probably meant) | Not a figure; stays unmatched |
+
+Because of the two mis-printed captions, 6-48, 10-31, 11-32 and 10-8 have no referencing paragraph (498 of 502 have one); 6-48, 10-31 and 11-32 are explained by the wrong numbers in the text, 10-8 ("CG moment envelope", PDF page 252) was not examined.
+
+**Chapters and appendices.** The chunker takes a chunk's chapter from the prefix of the printed page number ("4-8" gives chapter 4, "G-7" gives G). This PDF has parts A (Appendix A, 8 pages of performance charts), B (Appendix B, abbreviations and acronyms, 12 pages), C (Appendix C, airport signs, 4 pages), G (Glossary, 36 pages) and I (Index, 10 pages, skipped on purpose). Chunks exist only for B and G because A and C have almost no running text (A: chart titles only; C: a figure and sign tables), so the chunker found no paragraph there. The chapter of every one of the 1,740 chunks (first run) agrees with the printed pages it covers (0 mismatches), and the chapter of every figure agrees with its printed page except the two mis-printed captions above. `PART_NAMES` in `chunk_text.py` has no entry for "C" (it would give the heading `None` if C ever had a chunk).
+
+**Limitations found, not fixed:**
+- **Figures with a lettered number are not captured.** The caption pattern is `Figure <digits>-<digits>.`; Appendix C has "Figure C-1", "C-2", "C-3" (PDF pages 473, 474, 476), which are therefore not figures in the output. Appendix A's 8 chart pages have no "Figure" caption at all and sit in the unbound list. 15B has no lettered captions, so the pattern never failed before.
+- 30 figures are flagged "crop contains a body paragraph" and need a look in the QA queue (3 in 15B).
+- The 42 unbound regions were not looked at one by one: they are mostly front matter (pages 1 to 6), the Appendix A and C pages, the glossary and the index.
+- **Manual sample check (5 Nov):** `evaluation/check_sample_FAA-H-8083-25C.csv` (20 pairs, seed 7, drawn from the 502 bound figures, same format as the 15B file). Result: **caption correct 20/20, page correct 20/20, image complete 20/20.** Method: Claude did an AI pre-check (looked at all 20 images against their captions, and checked by script that each caption and its printed page are on the stated PDF page), and Clara confirmed it. The sample is small (20 of 502), so 20/20 does not prove a zero error rate; it is a spot check. It does not cover the 30 "body paragraph" flags or the 42 unbound regions. Claude had also looked at contact sheets of the 8 recovered figures and the 15 repaired ones.
+- Run time: the last 25C extraction took roughly 40 minutes on this PC (the 15B run was going at the same time for part of it); 15B alone took 5.5 minutes in v5 (see 1.1).
+
 ## 2. Evaluation set (Week 3)
 *(50+ questions, each with the expected figure identified by handbook and printed page)*
 
