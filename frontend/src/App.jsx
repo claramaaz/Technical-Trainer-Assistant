@@ -69,7 +69,7 @@ export default function App() {
       {status === "error" && <p className="error" role="alert">{errorText}</p>}
       {status === "no-answer" && <p className="no-answer" role="alert">{NO_ANSWER}</p>}
       {status === "results" &&
-        results.map((r) => <ResultCard key={r.figure_id} result={r} />)}
+        results.map((r) => <ResultCard key={r.id} result={r} />)}
     </main>
   );
 }

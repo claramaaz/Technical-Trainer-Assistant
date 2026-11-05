@@ -25,7 +25,11 @@ def test_search_bad_k_is_422(real_index):
     assert client.get("/search", params={"q": "inner ear", "k": 0}).status_code == 422
 
 
-def test_search_answerable_question(questions, real_index):
+def test_search_answerable_question(questions, real_index, monkeypatch):
+    # Q003 was written for 15B only (docs/EVALUATION.md 3.3): search 15B only, expected value unchanged.
+    from backend import app as app_module
+    real = app_module.retrieve
+    monkeypatch.setattr(app_module, "retrieve", lambda q, k: real(q, k, handbooks=["FAA-H-8083-15B"]))
     r = client.get("/search", params={"q": questions["Q003"]["question"]})
     body = r.json()
     assert r.status_code == 200 and body["reason"] is None
@@ -39,7 +43,8 @@ def test_search_no_answer_is_200_with_reason(questions, real_index):
 
 
 def test_image_exists(real_index):
-    r = client.get("/figures/3-9/image")
+    fid = client.get("/search", params={"q": "inner ear"}).json()["results"][0]["id"]
+    r = client.get(f"/figures/{fid}/image")
     assert r.status_code == 200 and r.headers["content-type"] == "image/png"
     assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
 
@@ -60,3 +65,16 @@ def test_page_is_served_when_build_exists(tmp_path, monkeypatch):
 def test_page_without_build_is_503(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.app.DIST", tmp_path)  # empty folder: no build
     assert client.get("/").status_code == 503
+
+
+def test_answer_route_no_answer_does_not_call_the_llm(questions, real_index, monkeypatch):
+    from backend import answer as answer_module
+    monkeypatch.setattr(answer_module.httpx, "post", lambda *a, **k: pytest.fail("the LLM was called"))
+    r = client.get("/answer", params={"q": questions["Q024"]["question"]})
+    assert r.status_code == 200
+    assert r.json() == {"answer": {"mode": "no_answer", "sentences": [], "fallback_reason": None}, "results": []}
+
+
+def test_answer_route_validates_q():
+    assert client.get("/answer").status_code == 422
+    assert client.get("/answer", params={"q": "  "}).status_code == 422

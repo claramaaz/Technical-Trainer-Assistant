@@ -19,14 +19,14 @@ KNOWN = ["Q003", "Q021", "Q019"]
 @pytest.mark.parametrize("qid", KNOWN)
 def test_known_question_returns_expected_figure_first(qid, questions, real_index):
     q = questions[qid]
-    out = retrieve(q["question"], k=5)
+    out = retrieve(q["question"], k=5, handbooks=["FAA-H-8083-15B"])  # the questions are 15B-only (EVALUATION 3.3)
     assert out["reason"] is None
     top = out["results"][0]
     assert top["figure_id"] == q["figure_number"]
     assert top["printed_page"] == q["printed_page"]
     assert top["handbook"] == "Instrument Flying Handbook"
     assert top["caption"].startswith("Figure " + q["figure_number"])
-    assert top["image_url"] == f"/figures/{q['figure_number']}/image"
+    assert top["image_url"] == f"/figures/{top['id']}/image"
     scores = [r["score"] for r in out["results"]]
     assert scores == sorted(scores, reverse=True) and len(scores) == 5
 
@@ -74,16 +74,17 @@ def test_threshold_is_the_provisional_value():
 def test_image_path_for_unknown_id_is_none(real_index):
     assert retrieval.image_path_for("../../etc/passwd") is None
     assert retrieval.image_path_for("99-99") is None
+    assert retrieval.image_path_for("3-9") is None   # a printed number is not an id any more
 
 
 def test_image_file_that_exists_but_is_not_in_the_index_is_not_served(real_index, monkeypatch):
-    # figures/3-9.png exists on disk, but if 3-9 is not in the index the id must not be served:
+    # the file exists on disk, but if its database id is not in the index it must not be served:
     # the path is taken from the index, never built from the URL.
-    assert retrieval.image_path_for("3-9") is not None
-    without = Index({i: d for i, d in real_index.documents.items() if d["figure_number"] != "3-9"},
-                    real_index.handbook, real_index.dsn)
+    fid = next(i for i, d in real_index.documents.items() if d["image_path"].is_file())
+    assert retrieval.image_path_for(fid) is not None
+    without = Index({i: d for i, d in real_index.documents.items() if i != fid}, real_index.dsn)
     monkeypatch.setattr(retrieval, "load_index", lambda: without)
-    assert retrieval.image_path_for("3-9") is None
+    assert retrieval.image_path_for(fid) is None
 
 
 def test_results_do_not_contain_the_server_file_path():

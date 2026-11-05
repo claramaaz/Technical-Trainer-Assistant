@@ -12,11 +12,17 @@ class FakeIndex(Index):
     vectors: object = None
 
 
-def numpy_rank(index, query_vector, k):
+def numpy_rank(index, query_vector, k, handbooks=None):
     scores = index.vectors @ query_vector
-    return [(int(i), float(scores[i])) for i in np.argsort(-scores)[:k]]
+    order = [int(i) for i in np.argsort(-scores)
+             if handbooks is None or index.documents[int(i)]["handbook_id"] in handbooks]
+    return [(i, float(scores[i])) for i in order[:k]]
 
 
 def make_fake(documents, vectors, handbook="Test Handbook"):
-    """documents: list of dicts (row i = vectors[i]). Keyed by row number like database ids."""
-    return FakeIndex(dict(enumerate(documents)), handbook, "no database", vectors)
+    """documents: list of dicts (row i = vectors[i]). Keyed by row number like database ids.
+    A document without its own handbook gets the default one."""
+    for d in documents:
+        d.setdefault("handbook", handbook)
+        d.setdefault("handbook_id", "TEST")
+    return FakeIndex(dict(enumerate(documents)), "no database", vectors)
