@@ -1,4 +1,4 @@
-"""FastAPI app: GET /search, GET /figures/{id}/image, GET /health, and the React page at /
+"""FastAPI app: GET /search, GET /answer, GET /figures/{id}/image, GET /health, and the React page at /
 (the built files in frontend/dist; create them with: cd frontend && npm run build).
 
 Run from the repository root:   python -m uvicorn backend.app:app
@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.answer import generate_answer
 from backend.retrieval import image_path_for, retrieve
 
 DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -33,9 +34,18 @@ def search(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, 
     return retrieve(q.strip(), k)
 
 
+@app.get("/answer")
+def answer(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, ge=1, le=20)):
+    if not q.strip():
+        raise HTTPException(status_code=422, detail="q must not be blank")
+    found = retrieve(q.strip(), k)
+    return {"answer": generate_answer(q.strip(), found["results"], found["reason"]),
+            "results": found["results"]}
+
+
 @app.get("/figures/{figure_id}/image")
 def figure_image(figure_id: str):
-    # The file path comes from the index, never from the URL, so "../" tricks find nothing.
+    # figure_id is the DATABASE id. The file path comes from the index, never from the URL.
     path = image_path_for(figure_id)
     if path is None:
         raise HTTPException(status_code=404, detail="figure not found")

@@ -34,7 +34,9 @@ def file_ranking(vectors, figures, query_vector, k):
 
 
 def db_ranking(index, query_vector, k):
-    return [(index.documents[i]["figure_number"], s) for i, s in retrieval.rank(index, query_vector, k)]
+    # only the handbook of the questions: the file reference below holds that handbook alone
+    return [(index.documents[i]["figure_number"], s)
+            for i, s in retrieval.rank(index, query_vector, k, handbooks=[HANDBOOK])]
 
 
 def compare(k=5):

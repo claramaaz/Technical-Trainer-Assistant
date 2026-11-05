@@ -15,8 +15,8 @@ def rank_fake_indexes_with_numpy(monkeypatch):
     from backend import retrieval
     from fake_index import FakeIndex, numpy_rank
     real_rank = retrieval.rank
-    monkeypatch.setattr(retrieval, "rank", lambda index, q, k: (numpy_rank if isinstance(index, FakeIndex)
-                                                               else real_rank)(index, q, k))
+    monkeypatch.setattr(retrieval, "rank", lambda index, q, k, handbooks=None: (
+        numpy_rank if isinstance(index, FakeIndex) else real_rank)(index, q, k, handbooks))
 
 
 @pytest.fixture(scope="session")

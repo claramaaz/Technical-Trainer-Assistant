@@ -222,4 +222,10 @@ Without the prefix (Hit@1 / Hit@5: caption 0.609 / 0.783, heading + caption 0.52
 - *Sample size.* 23 questions, one author: one question moves a metric by about 4.3 points. Every difference above is between one and three questions. With versus without the prefix, the figure-document result goes the other way from 3.1 for Hit@1 (0.696 without, 0.652 with), again one question.
 - *Heading rule.* The heading of 10 figures that have referencing paragraphs, and of the figures with no reference, may be empty; the first reference alone decides the heading.
 
+### 3.3 Two handbooks: how results are reported from now on (P7-25)
+- **The numbers above are FAA-H-8083-15B only.** Baseline v1 and v2 were measured when 15B was the only handbook, on questions Q001-Q025 written for 15B.
+- **Two numbers from now on:** "15B only" (`retrieve(..., handbooks=["FAA-H-8083-15B"])`; comparable with the baseline, and what the older automatic tests and `evaluation/compare_db_files.py` use) and "both handbooks" (default, `handbooks=None`).
+- **More than one correct figure.** With two handbooks a question can have several correct figures. Example: "four forces acting on an airplane" -> 15B figure 4-3 (0.812) and 25C figure 3-1, page 3-3 (0.687, rank 5). Which results are acceptable is judged by humans (brief section 8), not by the automatic rule (expected figure at rank 1 / in the top 5), which knows only one figure per question.
+- **Cross-handbook case to judge:** Q003 returns 25C figure 17-7 first when both handbooks are searched (15B figure 3-9 is the expected one). Not counted as right or wrong yet; to be judged by a person.
+
 ## 4. Deliberate improvement: before and after (Week 10)

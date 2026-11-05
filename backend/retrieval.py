@@ -42,22 +42,25 @@ NO_ANSWER = "no_adequate_answer"
 
 @dataclass
 class Index:
-    documents: dict  # database figure id -> dict: figure_number, caption, image_path, passage, printed_page
-    handbook: str
+    # database figure id -> dict: figure_number, caption, image_path, passage, printed_page,
+    # handbook_id, handbook (title). Provenance is per figure: one index holds several handbooks.
+    documents: dict
     dsn: str         # how rank() reaches the database
 
 
 # One row per searchable figure; the passage is the first citing paragraph (position 0).
 DESCRIBE_SQL = """
-    SELECT f.id, f.figure_number, f.caption, f.image_path, f.printed_page, f.handbook,
+    SELECT f.id, f.figure_number, f.caption, f.image_path, f.printed_page, f.handbook, f.document_id,
            (SELECT r.text FROM searchable_figure_refs r WHERE r.figure_id = f.id AND r.position = 0)
     FROM searchable_figures f
     ORDER BY f.id"""
 
 # Score = 1 - cosine distance. The id breaks ties so the order is always the same.
+# handbooks = a list of document ids such as ["FAA-H-8083-15B"], or NULL for all handbooks.
 RANK_SQL = """
     SELECT id, 1 - (embedding <=> %(q)s) AS score
     FROM searchable_figures
+    WHERE %(handbooks)s::text[] IS NULL OR document_id = ANY(%(handbooks)s::text[])
     ORDER BY embedding <=> %(q)s, id
     LIMIT %(k)s"""
 
@@ -73,7 +76,7 @@ def load_index_from(dsn):
     with connect(dsn) as conn:
         rows = conn.execute(DESCRIBE_SQL).fetchall()
     documents = {}
-    for fid, number, caption, image_key, printed_page, _handbook, passage in rows:
+    for fid, number, caption, image_key, printed_page, handbook, handbook_id, passage in rows:
         documents[fid] = {
             "figure_number": number,
             "caption": caption,
@@ -81,8 +84,10 @@ def load_index_from(dsn):
             "image_path": ROOT / "data" / "extracted" / image_key,
             "passage": passage or "",
             "printed_page": printed_page,
+            "handbook_id": handbook_id,
+            "handbook": handbook,
         }
-    return Index(documents, rows[0][5] if rows else "", dsn)
+    return Index(documents, dsn)
 
 
 @lru_cache(maxsize=1)
@@ -100,33 +105,41 @@ def embed_query(query):
     return _model().encode([QUERY_PREFIX + query], normalize_embeddings=True)[0]
 
 
-def rank(index, query_vector, k):
-    """(figure id, score) of the k best searchable figures, best first. Done by the database."""
+def rank(index, query_vector, k, handbooks=None):
+    """(figure id, score) of the k best searchable figures, best first. Done by the database.
+
+    handbooks: optional list of handbook (document) ids to search in; None = all handbooks."""
+    handbooks = list(handbooks) if handbooks is not None else None
     with connect(index.dsn) as conn:
-        rows = conn.execute(RANK_SQL, {"q": query_vector, "k": k}).fetchall()
+        rows = conn.execute(RANK_SQL, {"q": query_vector, "k": k, "handbooks": handbooks}).fetchall()
     return [(int(fid), float(score)) for fid, score in rows]
 
 
-def retrieve(query, k=5, index=None, query_vector=None):
+def retrieve(query, k=5, index=None, query_vector=None, handbooks=None):
     """Top-k figures for a question, or {"results": [], "reason": "no_adequate_answer"}.
+
+    handbooks: optional list of handbook ids to search in (default None = all handbooks). The
+    threshold is applied to the best score inside that selection.
 
     index and query_vector can be passed in (tests do); by default they are loaded.
     """
     index = index or load_index()
     if query_vector is None:
         query_vector = embed_query(query)
-    ranked = rank(index, query_vector, k)
+    ranked = rank(index, query_vector, k, handbooks)
     if not ranked or ranked[0][1] < THRESHOLD:
         return {"results": [], "reason": NO_ANSWER}
     results = []
     for i, score in ranked:
         d = index.documents[i]
         results.append({
-            "figure_id": d["figure_number"],
+            "id": i,                           # database id: unique across handbooks, the stable id
+            "figure_id": d["figure_number"],   # printed number ("3-1"), for display only
             "caption": d["caption"],
-            "image_url": f"/figures/{d['figure_number']}/image",
+            "image_url": f"/figures/{i}/image",
             "passage": d["passage"],
-            "handbook": index.handbook,
+            "handbook_id": d["handbook_id"],
+            "handbook": d["handbook"],
             "printed_page": d["printed_page"],
             "score": score,
         })
@@ -134,8 +147,13 @@ def retrieve(query, k=5, index=None, query_vector=None):
 
 
 def image_path_for(figure_id):
-    """Image file of a figure, or None if the id is not in the index (never built from user text)."""
-    for d in load_index().documents.values():
-        if d["figure_number"] == figure_id:
-            return d["image_path"] if d["image_path"].is_file() else None
-    return None
+    """Image file of a figure by DATABASE id, or None if the id is not in the index.
+
+    The printed number ("3-1") is not an id: it exists in every handbook. The path comes from the
+    index, never from the text of the URL."""
+    if isinstance(figure_id, str) and figure_id.isascii() and figure_id.isdigit():
+        figure_id = int(figure_id)
+    if not isinstance(figure_id, int) or isinstance(figure_id, bool):
+        return None
+    d = load_index().documents.get(figure_id)
+    return d["image_path"] if d and d["image_path"].is_file() else None
