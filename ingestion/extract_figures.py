@@ -234,13 +234,17 @@ def drop_contained(boxes):
     return keep
 
 
-def merge_boxes(boxes, separators=()):
+def merge_boxes(boxes, separators=(), paragraphs=()):
     """Union boxes that overlap or are within MERGE_GAP of each other.
 
     separators: caption rectangles. Two pieces are NOT merged when a caption
     lies between them, because a caption marks the end of one figure. Without
     this, two figures printed close together (e.g. Figures 3-5 and 3-6 on PDF
     page 72) became one region.
+
+    paragraphs: rectangles of body-text paragraphs. The line halfway between two
+    side-by-side captions only applies BELOW the lowest paragraph it crosses,
+    i.e. to the figures printed between that text and the captions.
     """
     def grow(r):
         return pymupdf.Rect(r.x0 - MERGE_GAP, r.y0 - MERGE_GAP, r.x1 + MERGE_GAP, r.y1 + MERGE_GAP)
@@ -262,31 +266,40 @@ def merge_boxes(boxes, separators=()):
     # Two captions side by side mean two figures side by side: the line halfway
     # between them is a boundary that no merge may cross above them (7-1 / 7-3
     # on PDF page 163, joined by a strip image reaching 3 pt over the gap).
+    # The boundary only concerns the figures between the captions and the body
+    # text above them: a full-width figure higher up the page, on the other side
+    # of a paragraph, must not be split by it (FAA-H-8083-25C, Figure 17-23).
     flat = [c for c in separators if not is_vertical(c)]
     splits = []
     for c1 in flat:
         for c2 in flat:
             if c1.x1 <= c2.x0 and min(c1.y1, c2.y1) - max(c1.y0, c2.y0) > 0:
-                splits.append(((c1.x1 + c2.x0) / 2, max(c1.y1, c2.y1)))
+                x, top = (c1.x1 + c2.x0) / 2, min(c1.y0, c2.y0)
+                y_from = max([p.y1 for p in paragraphs if p.y1 <= top and p.x0 < x < p.x1], default=-1e9)
+                splits.append((x, y_from, max(c1.y1, c2.y1)))
 
-    # A piece that reaches over such a boundary is cut back to its own side
-    # (the strip on PDF page 163 left a 3 pt sliver of 7-3 on the edge of 7-1).
+    # A piece that reaches a little over such a boundary is cut back to its own
+    # side (the strip on PDF page 163 left a 3 pt sliver of 7-3 on the edge of
+    # 7-1). A piece that reaches far over it is a figure wider than its caption
+    # (25C: 17-24, 9-2): it is kept whole, and merging across the line stays blocked.
     cut = []
     for b in boxes:
         b = pymupdf.Rect(b)
-        for x, y_end in splits:
-            if b.y0 < y_end and b.x0 < x < b.x1:
+        for x, y_from, y_end in splits:
+            if y_from < b.y1 and b.y0 < y_end and b.x0 < x < b.x1:
                 if (b.x0 + b.x1) / 2 < x:
-                    b.x1 = x
-                else:
+                    if b.x1 - x <= 2 * MERGE_GAP:
+                        b.x1 = x
+                elif x - b.x0 <= 2 * MERGE_GAP:
                     b.x0 = x
         cut.append(b)
     boxes = cut
 
     def across_split(a, b):
-        for x, y_end in splits:
+        for x, y_from, y_end in splits:
             ca_x, cb_x = (a.x0 + a.x1) / 2, (b.x0 + b.x1) / 2
-            if (ca_x - x) * (cb_x - x) < 0 and a.y0 < y_end and b.y0 < y_end:
+            if ((ca_x - x) * (cb_x - x) < 0 and a.y0 < y_end and b.y0 < y_end
+                    and a.y1 > y_from and b.y1 > y_from):
                 return True
         return False
 
@@ -326,10 +339,60 @@ def merge_boxes(boxes, separators=()):
     return [r for r in regions if r.width >= MIN_SIDE and r.height >= MIN_SIDE]
 
 
+CAPTION_LINE = re.compile(r"^\s*Figure\s+\d+-\d+\.\s")     # one LINE that starts a caption
+
+
+def split_caption_block(page, rect):
+    """Cut one text block that holds several captions into one piece per caption.
+
+    FAA-H-8083-25C prints two figures side by side with their two captions in
+    ONE text block (Figures 1-1/1-2, 7-7/7-8, ...). Read as a whole, only the
+    first caption would be found. The block's lines are read instead: every
+    line that starts with "Figure N-M." opens a caption, and every other line
+    (a caption wrapping onto a second line) joins the caption that starts
+    nearest to it on the left, among those that start at or above it.
+    Returns [(rect, text), ...] in reading order.
+    """
+    lines = []
+    for b in page.get_text("dict", clip=rect)["blocks"]:
+        for line in (b["lines"] if b["type"] == 0 else []):
+            box = pymupdf.Rect(line["bbox"])
+            if box.get_area() and (box & rect).get_area() >= 0.5 * box.get_area():
+                lines.append((box, "".join(s["text"] for s in line["spans"])))
+    starts = [i for i, (_, t) in enumerate(lines) if CAPTION_LINE.match(t)]
+    groups = {i: [lines[i]] for i in starts}
+    for i, (box, text) in enumerate(lines):
+        if i in groups:
+            continue
+        above = [s for s in starts if lines[s][0].y0 <= box.y0 + 2] or starts
+        owner = min(above, key=lambda s: (abs(lines[s][0].x0 - box.x0), -lines[s][0].y0))
+        groups[owner].append((box, text))
+    pieces = []
+    for owner in starts:
+        members = sorted(groups[owner], key=lambda m: (round(m[0].y0), m[0].x0))
+        union = pymupdf.Rect(members[0][0])
+        for box, _ in members[1:]:
+            union |= box
+        pieces.append((union, " ".join(" ".join(t for _, t in members).split())))
+    return sorted(pieces, key=lambda p: (round(p[0].y0), p[0].x0))
+
+
 def text_blocks(page):
-    """(rect, text) for every text block, with line breaks joined into spaces."""
-    return [(pymupdf.Rect(b[:4]), " ".join(b[4].split()))
-            for b in page.get_text("blocks") if b[6] == 0 and b[4].strip()]
+    """(rect, text) for every text block, with line breaks joined into spaces.
+    A block that holds more than one caption comes out as one piece per caption."""
+    blocks = []
+    for b in page.get_text("blocks"):
+        if b[6] != 0 or not b[4].strip():
+            continue
+        rect = pymupdf.Rect(b[:4])
+        pieces = []
+        if sum(1 for ln in b[4].splitlines() if CAPTION_LINE.match(ln)) >= 2:
+            pieces = split_caption_block(page, rect)
+        if len(pieces) >= 2:
+            blocks.extend(pieces)
+        else:                                  # normal block (or a split that did not work: keep the text)
+            blocks.append((rect, " ".join(b[4].split())))
+    return blocks
 
 
 def is_vertical(rect):
@@ -536,7 +599,8 @@ def find_figures(page, ink):
     cap_rects = [r for r, _ in captions]
     boxes = split_at_captions(graphic_boxes(page, ink),
                               [r for r in cap_rects if not is_vertical(r)], ink)
-    regions = merge_boxes(boxes, separators=cap_rects)
+    paragraphs = [r for r, t in blocks if len(t) > LONG_PARAGRAPH and not CAPTION.match(t)]
+    regions = merge_boxes(boxes, separators=cap_rects, paragraphs=paragraphs)
     regions = join_sideways_figure(captions, regions)
     pairs = bind(captions, regions)
 
@@ -644,6 +708,13 @@ def main():
                     record["needs_review"] = "crop contains a body paragraph"
             else:
                 record.update(status="caption_only", bbox=None, image_path=None)
+            # The handbook itself mis-numbers some captions (25C: "Figure 6-48" is
+            # printed in chapter 7). The number is kept as printed; the page's
+            # chapter prefix shows the mismatch, so a person checks it.
+            page_chapter = re.match(r"(\d+)-\d+$", printed or "")
+            if page_chapter and page_chapter.group(1) != number.split("-")[0]:
+                reason = "caption number does not match the chapter of the printed page"
+                record["needs_review"] = "; ".join(filter(None, [record.get("needs_review"), reason]))
             figures.append(record)
 
         bound_regions = set(pairs.values())

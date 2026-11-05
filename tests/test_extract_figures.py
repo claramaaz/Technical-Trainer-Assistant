@@ -370,3 +370,126 @@ def test_side_by_side_panels_do_not_take_each_others_pieces(result):
     _, figures, _, _ = result
     assert figures["1-22"]["status"] == figures["1-23"]["status"] == "bound"
     assert figures["1-23"]["bbox"][0] > 275 and figures["1-22"]["bbox"][2] <= 281   # no sliver of the right panel
+
+
+# --- Two captions printed in ONE text block (FAA-H-8083-25C: 8 figures were lost) ---
+
+def make_two_captions_in_one_block(path):
+    """Two figures side by side whose captions the PDF stores as ONE text block.
+    Page 1: the left caption wraps onto a second line, the right one follows (like 7-7 / 7-8).
+    Page 2: the right caption comes first in the file (like 14-3 before 14-2)."""
+    doc = pymupdf.open()
+    grey = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 50, 50), 0)
+    grey.clear_with(180)
+    for number, rows in (("1-1", [(72, 400, "Figure 1-1. Left figure, with a long"),
+                                  (72, 409, "caption on two lines."),
+                                  (321, 409, "Figure 1-2. Right figure.")]),
+                         ("1-2", [(321, 400, "Figure 1-4. Right figure."),
+                                  (72, 409, "Figure 1-3. Left figure.")])):
+        p = doc.new_page()
+        p.insert_text((290, p.rect.height - 25), number)
+        p.insert_image(pymupdf.Rect(72, 150, 280, 380), pixmap=grey)
+        p.insert_image(pymupdf.Rect(321, 150, 520, 380), pixmap=grey)
+        for x, y, text in rows:
+            p.insert_text((x, y), text, fontsize=9)
+    doc.save(path)
+
+
+def test_the_two_captions_really_are_one_text_block_in_the_test_pdf(tmp_path):
+    """Guard: if this fails the next tests no longer test what they say."""
+    make_two_captions_in_one_block(tmp_path / "t.pdf")
+    for page in pymupdf.open(tmp_path / "t.pdf"):
+        blocks = [b for b in page.get_text("blocks") if b[6] == 0 and b[4].count("Figure ") >= 2]
+        assert len(blocks) == 1
+
+
+def test_one_text_block_with_two_captions_gives_two_captions(tmp_path):
+    make_two_captions_in_one_block(tmp_path / "t.pdf")
+    sys.path.insert(0, str(ROOT / "ingestion"))
+    import extract_figures as E
+    page = pymupdf.open(tmp_path / "t.pdf")[0]
+    captions = [t for _, t in E.text_blocks(page) if E.CAPTION.match(t)]
+    assert sorted(captions) == ["Figure 1-1. Left figure, with a long caption on two lines.",
+                                "Figure 1-2. Right figure."]
+
+
+def test_both_figures_are_found_and_bound_to_their_own_image(tmp_path):
+    make_two_captions_in_one_block(tmp_path / "TEST-HB.pdf")
+    run = subprocess.run([sys.executable, str(ROOT / "ingestion" / "extract_figures.py"), "TEST-HB.pdf"],
+                         cwd=tmp_path, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    out = tmp_path / "data" / "extracted" / "TEST-HB"
+    figures = {f["figure_number"]: f for f in map(json.loads, open(out / "figures.jsonl"))}
+    assert sorted(figures) == ["1-1", "1-2", "1-3", "1-4"]
+    assert figures["1-1"]["caption"] == "Figure 1-1. Left figure, with a long caption on two lines."
+    assert figures["1-2"]["caption"] == "Figure 1-2. Right figure."
+    assert figures["1-3"]["caption"] == "Figure 1-3. Left figure."
+    assert figures["1-4"]["caption"] == "Figure 1-4. Right figure."
+    for number in figures:
+        assert figures[number]["status"] == "bound"
+    for left, right in (("1-1", "1-2"), ("1-3", "1-4")):
+        assert figures[left]["bbox"][2] < 300 < figures[right]["bbox"][0]   # each caption got its own image
+    assert not (out / "unbound.jsonl").read_text().strip()                # no image left over
+
+
+# --- A caption number that does not match the chapter of its page (25C: 6-48, 10-31) ---
+
+def test_caption_number_from_another_chapter_is_kept_but_flagged(tmp_path):
+    doc = pymupdf.open()
+    grey = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 50, 50), 0)
+    grey.clear_with(180)
+    for printed, caption in (("7-40", "Figure 6-48. Printed in chapter 7."),      # wrong chapter in the caption
+                             ("7-41", "Figure 7-49. Printed in chapter 7."),      # fine
+                             ("B-3", "Figure 7-50. In an appendix.")):            # lettered pages: no judgement
+        p = doc.new_page()
+        p.insert_text((290, p.rect.height - 25), printed)
+        p.insert_image(pymupdf.Rect(72, 150, 280, 380), pixmap=grey)
+        p.insert_text((72, 400), caption, fontsize=9)
+    doc.save(tmp_path / "TEST-HB.pdf")
+    run = subprocess.run([sys.executable, str(ROOT / "ingestion" / "extract_figures.py"), "TEST-HB.pdf"],
+                         cwd=tmp_path, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    out = tmp_path / "data" / "extracted" / "TEST-HB"
+    figures = {f["figure_number"]: f for f in map(json.loads, open(out / "figures.jsonl"))}
+    assert sorted(figures) == ["6-48", "7-49", "7-50"]                           # the number is NOT changed
+    assert figures["6-48"]["needs_review"] == "caption number does not match the chapter of the printed page"
+    assert "needs_review" not in figures["7-49"]
+    assert "needs_review" not in figures["7-50"]
+    assert json.loads((out / "report.json").read_text())["bound_figures_flagged_for_review"] == 1
+
+
+# --- The boundary between side-by-side captions must not cut figures that are wider than their captions ---
+# (25C page 450: after splitting a two-caption block, the line halfway between the SHORT captions
+#  cut the full-width figure 17-23 above them and the right side of 17-24.)
+
+def make_wide_figures_with_short_captions(path):
+    doc = pymupdf.open()
+    grey = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 50, 50), 0)
+    grey.clear_with(180)
+    p = doc.new_page()
+    p.insert_text((290, p.rect.height - 25), "1-1")
+    p.insert_image(pymupdf.Rect(72, 60, 300, 180), pixmap=grey, keep_proportion=False)   # full-width figure,
+    p.insert_image(pymupdf.Rect(304, 60, 520, 180), pixmap=grey, keep_proportion=False)  # two panels 4 pt apart
+    p.insert_text((72, 195), "Figure 1-1. Wide pair of panels.", fontsize=9)
+    p.insert_textbox(pymupdf.Rect(72, 220, 520, 300), "Body text. " * 40, fontsize=9)
+    p.draw_rect(pymupdf.Rect(72, 320, 330, 500), fill=(0.6, 0.8, 1))     # left figure: much wider than its caption
+    p.draw_rect(pymupdf.Rect(334, 320, 520, 500), fill=(0.6, 0.8, 1))
+    p.insert_text((334, 515), "Figure 1-3. Right.", fontsize=9)           # one text block, right caption first
+    p.insert_text((72, 524), "Figure 1-2. Left.", fontsize=9)
+    doc.save(path)
+
+
+def test_boundary_between_short_captions_does_not_cut_wide_figures(tmp_path):
+    make_wide_figures_with_short_captions(tmp_path / "TEST-HB.pdf")
+    page = pymupdf.open(tmp_path / "TEST-HB.pdf")[0]
+    assert len([b for b in page.get_text("blocks") if b[6] == 0 and b[4].count("Figure ") == 2]) == 1   # guard
+    run = subprocess.run([sys.executable, str(ROOT / "ingestion" / "extract_figures.py"), "TEST-HB.pdf"],
+                         cwd=tmp_path, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    out = tmp_path / "data" / "extracted" / "TEST-HB"
+    figures = {f["figure_number"]: f for f in map(json.loads, open(out / "figures.jsonl"))}
+    assert all(f["status"] == "bound" for f in figures.values()), {n: f["status"] for n, f in figures.items()}
+    assert figures["1-1"]["bbox"][0] <= 73 and figures["1-1"]["bbox"][2] >= 518      # whole top figure
+    assert figures["1-2"]["bbox"][0] <= 73 and figures["1-2"]["bbox"][2] >= 328      # not cut at the caption line (x~222)
+    assert figures["1-3"]["bbox"][0] >= 330 and figures["1-3"]["bbox"][2] >= 518     # and still two separate figures
+    assert figures["1-2"]["bbox"][2] <= 334

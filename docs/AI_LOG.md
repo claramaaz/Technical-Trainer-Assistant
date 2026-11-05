@@ -222,3 +222,33 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **What was wrong / surprising:** an older `uvicorn` of this project was still running on port 8000 with the previous, file-based code (its answers contained an absolute `image_path`). My first proxy check went to that old process. I could not stop it (the stop was refused), so the new code was checked on port 8001.
 - **What we could NOT verify / limits:** the page was not opened in a browser and not tested at 360 px (only built, and its files and the API behind it checked with curl and pytest); the loading, error and empty-query states are not covered by an automated test (no frontend test tool was added); the low-confidence notice of FR-002 is not built (TODO in README).
 - **Commit / PR:** branch `feature/P7-24-react-search` (not committed)
+
+### 2026-11-04 — P7-18: the inspector's gap list for FAA-H-8083-25C was misleading
+- **Who:** Clara
+- **Tool:** Claude
+- **What we asked:** Ingest the second handbook (FAA-H-8083-25C) with the existing pipeline and compare the figure count with the handbook's own list of figures, chapter by chapter.
+- **What came back:** `ingestion/inspect_pdf.py` printed "Numbering gaps" such as "ch.6: missing [25 ... 34] ...", "ch.10: missing [12 ... 21] ..." next to 494 captions, which looks like about 90 missing figures. Claude then wrote a second comparison (captions against the "Figure X-Y" references in the body text), which showed one more long gap in chapter 4 (4-9 to 4-51).
+- **What was wrong / surprising:**
+  - The long gaps are **not** missing figures. Two captions are mis-numbered **in the handbook itself**: "Figure 6-48" is printed on page 7-40 (the text calls it 7-48, deicing boots) and "Figure 10-31" is printed on page 11-26 (the text calls it 11-31, crosswind chart). A gap list that looks at the highest number turns each of them into a run of 20+ "missing" figures. The chapter-4 run came from one stray sentence that says "Figure 4-51" (PDF page 137), which does not exist.
+  - Two different causes produce the long runs, and the two comparisons see different ones. The inspector (captions only) shows the chapter 6 and chapter 10 runs, caused by the two mis-numbered captions. The comparison against the body text shows the chapter 4 run, caused by a reference to a figure that does not exist, and the numbers 7-48, 10-32 and 11-31, which are mentioned in the text but have no caption under that number. Neither list says by itself which case it is; the printed-page prefix did.
+  - The real extraction misses were 8 figures whose caption shares one text block with a neighbour's caption (1-1, 1-22, 5-8, 5-40, 7-8, 9-4, 14-2, 17-24). The gap list showed them as short gaps ("ch.1: missing [1, 22]") that are easy to overlook among the long ones. The inspector reads captions block by block, like the extractor did, so its caption count (494) is also 8 short. It was not changed.
+- **What we kept / changed:** The extractor was fixed (see docs/EVALUATION.md section 1.4). The inspector's gap list is kept, but it must not be read as a count of missing figures. The check that works: for each gap, look at the printed-page prefix of the nearest captions and at the text references.
+- **What we could NOT verify:** that no other figure hides behind a mis-numbered caption. Only 2 of 494 captions have a number whose chapter differs from the page's chapter, but a mis-numbering inside the same chapter would not show.
+- **Commit / PR:** branch `feature/P7-18-second-handbook` (not committed)
+
+### 2026-11-04 — P7-18: Claude copied the sample CSV to the Desktop without being asked
+- **Who:** Clara
+- **Tool:** Claude
+- **What we asked:** Draw 20 random figure-caption pairs of FAA-H-8083-25C for a manual check (`ingestion/sample_check.py draw`, seed 7).
+- **What came back:** The script wrote `check_sample.csv` and `check_sample.html` in `data/extracted/FAA-H-8083-25C/`. In the next command Claude also copied the CSV to the Desktop (`Desktop/check_sample_FAA-H-8083-25C.csv`). Nobody asked for a copy, and the task already said where the file belongs (the project).
+- **What was wrong:** an action outside the project folder that was not requested, done as a convenience. Claude noticed it in the same turn, deleted that one copy by name (nothing else on the Desktop was touched) and said so in its report to Clara.
+- **What we kept / changed:** Only the files inside `data/extracted/FAA-H-8083-25C/`. Rule for next time: write only where the task says; give the path instead of copying.
+- **Commit / PR:** branch `feature/P7-18-second-handbook` (not committed)
+
+### 2026-11-05 - P7-18: manual sample check of FAA-H-8083-25C (AI pre-check, confirmed by Clara)
+- **Who:** Clara
+- **Tool:** Claude
+- **What we asked:** Fill the 20-pair sample (`evaluation/check_sample_FAA-H-8083-25C.csv`) with the judgements: caption, page and image.
+- **What came back:** Claude looked at all 20 images next to their captions and checked by script that each caption and printed page are on the stated PDF page. Result 20/20, 20/20, 20/20. Clara confirmed it and the note in the CSV says so ("AI pre-check by Claude, confirmed by Clara on 5 Nov").
+- **What we could NOT verify:** the check is by an AI looking at pictures, then confirmed by a person; it is a spot check of 20 of 502 figures, not a proof. The 30 "body paragraph" flags and the 42 unbound regions are not covered.
+- **Commit / PR:** branch `feature/P7-18-second-handbook` (not committed)
