@@ -305,3 +305,13 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **What was wrong, and how it was caught:** Claude Code's summary of the run said Q018 was "refused by the threshold" as if a correct answer had been lost. Reading `summary.md` showed that Q018's expected figure is not in the top 5 in either scope, so the refusal hid nothing. Corrected in EVALUATION.md 3.4.
 - **What we could NOT verify:** the human metrics are empty (146 of 166 pairs not judged yet). The threshold is not validated (2 no-answer questions only).
 - **Commit / PR:** branch `feature/P7-17-run-eval`
+
+### 2026-11-06 - P7-48: low-confidence match (FR-002, FR-007)
+- **Who:** Clara
+- **Tool:** Claude (code), Claude Code (running the tests on the local database)
+- **What we asked:** The third case of FR-002 ("match, low-confidence match or no match") so the interface can show a low-confidence notice (UC-02 A3, brief section 12), and the `low_confidence` outcome of FR-007 in the query log.
+- **What came back:** a second threshold `LOW_CONFIDENCE_BELOW = 0.70` in `backend/retrieval.py`, marked PROVISIONAL (to be set on the 50-question run); `"confidence": "high" | "low"` on `/search` and `/answer` when figures are returned; migration `005_low_confidence_outcome.sql`; `tests/test_low_confidence.py` (10 tests).
+- **What was wrong, and how it was caught:** the first version added `"confidence": None` to every `/answer` response. The existing test `test_answer_route_no_answer_does_not_call_the_llm` compares the whole response and failed (1 failed, 207 passed). Caught by running the full suite with Claude Code. Fix: the code, not the test: `confidence` is only present when figures are returned, the same rule as `/search`, so the no-answer response is unchanged for the interface.
+- **Checked:** 217 passed (Clara, 6 Nov).
+- **What we could NOT verify:** the value 0.70 is not justified yet; it only lets the notice be built. It must be set from the scores of the 50-question run and recorded in EVALUATION.md.
+- **Commit / PR:** branch `feature/P7-48-low-confidence`

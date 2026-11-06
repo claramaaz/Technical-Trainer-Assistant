@@ -1,9 +1,10 @@
 """Query log (P7-28; FR-007, UC-02 postconditions): one row in query_log per question asked.
 
 log_query(endpoint, query, latency_ms, found=None, answer_mode=None, error=None)
-    outcome = "error"     if error is given (the request failed),
-              "no_answer" if retrieval found no adequate answer,
-              "answered"  otherwise.
+    outcome = "error"          if error is given (the request failed),
+              "no_answer"      if retrieval found no adequate answer,
+              "low_confidence" if figures were returned with confidence "low" (FR-002, FR-007),
+              "answered"       otherwise.
 
 A failure to WRITE the log never breaks the search itself: it is reported with
 logging.warning and the learner still gets the answer (our choice, not a requirement).
@@ -47,6 +48,8 @@ def outcome_of(found, error=None):
         return "error"
     if found is None or found.get("reason") is not None:
         return "no_answer"
+    if found.get("confidence") == "low":
+        return "low_confidence"   # FR-007 lists it as its own outcome
     return "answered"
 
 

@@ -86,7 +86,10 @@ def answer(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, 
         log_query("answer", query, elapsed_ms(start), error=exc)
         raise
     log_query("answer", query, elapsed_ms(start), found=found, answer_mode=answer_.get("mode"))
-    return {"answer": answer_, "results": found["results"]}
+    body = {"answer": answer_, "results": found["results"]}
+    if "confidence" in found:          # same rule as /search: only present when figures are returned
+        body["confidence"] = found["confidence"]
+    return body
 
 
 @app.get("/figures/{figure_id}/image")
