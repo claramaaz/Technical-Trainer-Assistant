@@ -20,6 +20,8 @@
 | 1.0 | 19/10/2026 | Converted to Markdown. Added section 5 (chunking strategy, page numbering, evaluation metrics), FR-009 (answers with cited sources), low-confidence handling in FR-002, decisions for UC-04 A2 and UC-07, stack decisions (2.5), corrected cross-references. |
 | 1.1 | 28/10/2026 | 5.1: chunk size cap set to 200 words from the measurement of FAA-H-8083-15B; embedding model must accept ≥ 512 tokens; content covered by chunking listed. |
 
+| 1.2 | 06/11/2026 | 2.5: embedding model (BAAI/bge-small-en-v1.5, 384 dimensions) and language model (Groq) recorded, as 2.5 required once chosen. No requirement changed. |
+
 Any later divergence from this document is recorded in this change log with its reason.
 
 ## 2. Introduction
@@ -87,8 +89,8 @@ The FAA handbook index and PDF URLs remain stable. Figure extraction quality var
 | Frontend | React (responsive web, no native app) | Confirmed |
 | PDF extraction | PyMuPDF | Confirmed |
 | Figure images | Stored as files in object storage; the database stores their path | Confirmed |
-| Embedding model | Chosen in Week 3 on the baseline evaluation; recorded here when chosen. Must accept at least 512 input tokens (5.1) | Open |
-| Language model for answers | Chosen in Week 4; recorded here when chosen | Open |
+| Embedding model | BAAI/bge-small-en-v1.5: 384 dimensions per vector (`vector(384)` in pgvector), about 33 M parameters, up to 512 input tokens (meets 5.1). Free, runs on a CPU, light enough for a free host. Measured on the baseline (EVALUATION.md 3.1-3.2). A larger model (bge-base, 768 dimensions) is a candidate for the deliberate improvement; changing the model needs a new migration and a re-embedding. | Confirmed (Week 3; size discussed with the supervisor, 3 Nov) |
+| Language model for answers | Groq, free tier, model `openai/gpt-oss-120b`, through an OpenAI-compatible API. Provider, model and key are read only from `.env`, so the provider can be changed without code changes. The model only rewrites retrieved passages (FR-009, BR-004); without it the system answers with extracted sentences. | Confirmed (supervisor, 3 Nov) |
 | Hosting | Chosen before Week 6; recorded here when chosen | Open |
 | Task tracking | Jira | Confirmed (supervisor) |
 
