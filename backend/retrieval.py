@@ -60,7 +60,7 @@ class Index:
 DESCRIBE_SQL = """
     SELECT f.id, f.figure_number, f.caption, f.image_path, f.printed_page, f.handbook, f.document_id,
            (SELECT r.text FROM searchable_figure_refs r WHERE r.figure_id = f.id AND r.position = 0),
-           f.pdf_page, p.image_path, p.source_url
+           f.pdf_page, p.image_path, p.source_url, f.thumbnail_path
     FROM searchable_figures f
     LEFT JOIN searchable_pages p ON p.document_id = f.document_id AND p.pdf_index = f.pdf_page
     ORDER BY f.id"""
@@ -90,8 +90,9 @@ def load_index_from(dsn, image_root=None):
         rows = conn.execute(DESCRIBE_SQL).fetchall()
     documents = {}
     for (fid, number, caption, image_key, printed_page, handbook, handbook_id, passage,
-         pdf_page, page_key, source_url) in rows:
+         pdf_page, page_key, source_url, thumb_key) in rows:
         page_image = image_root / page_key if page_key else None
+        thumbnail = image_root / thumb_key if thumb_key else None
         documents[fid] = {
             "figure_number": number,
             "caption": caption,
@@ -105,6 +106,8 @@ def load_index_from(dsn, image_root=None):
             # None when the page was not rendered: "View source" then says so (UC-07 A1)
             "page_image_path": page_image if page_image and page_image.is_file() else None,
             "source_url": source_url,
+            # NFR-001: small WebP shown first; None when make_thumbnails.py has not run
+            "thumbnail_path": thumbnail if thumbnail and thumbnail.is_file() else None,
         }
     return Index(documents, dsn)
 
@@ -166,6 +169,8 @@ def retrieve(query, k=5, index=None, query_vector=None, handbooks=None):
             "score": score,
             # UC-07 "View source": stored image of the page, and the FAA PDF opened at that page
             "page_image_url": f"/figures/{i}/page-image" if d.get("page_image_path") else None,
+            # NFR-001: compressed thumbnail first; image_url is the full-size image, loaded on request
+            "thumbnail_url": f"/figures/{i}/thumbnail" if d.get("thumbnail_path") else None,
             "source_pdf_url": (f"{d['source_url']}#page={d['pdf_page']}"
                                if d.get("source_url") and d.get("pdf_page") else None),
         })
@@ -186,6 +191,13 @@ def page_image_path_for(figure_id):
     """Stored image of the page a figure is on (UC-07), by DATABASE id; None if unknown or not rendered."""
     d = _figure(figure_id)
     path = d.get("page_image_path") if d else None
+    return path if path and path.is_file() else None
+
+
+def thumbnail_path_for(figure_id):
+    """Thumbnail of a figure (NFR-001), by DATABASE id; None if unknown or not made."""
+    d = _figure(figure_id)
+    path = d.get("thumbnail_path") if d else None
     return path if path and path.is_file() else None
 
 
