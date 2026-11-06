@@ -37,6 +37,13 @@ MODEL_NAME = "BAAI/bge-small-en-v1.5"
 # scores 0.626. Must be re-set on a separate set with more no-answer questions.
 THRESHOLD = 0.65
 
+# PROVISIONAL, like THRESHOLD: a placeholder so the low-confidence notice can be built and tested
+# (FR-002, UC-02 A3, brief section 12). Between THRESHOLD and this value the best figure is shown
+# with confidence "low". To be set on the 50-question run and recorded in EVALUATION.md. On the
+# 25-question run, Q017's correct top-1 scores 0.653 and Q025 (no answer) 0.626: the zone just
+# above THRESHOLD is where the system cannot tell right from wrong.
+LOW_CONFIDENCE_BELOW = 0.70
+
 NO_ANSWER = "no_adequate_answer"
 
 
@@ -130,6 +137,9 @@ def rank(index, query_vector, k, handbooks=None):
 def retrieve(query, k=5, index=None, query_vector=None, handbooks=None):
     """Top-k figures for a question, or {"results": [], "reason": "no_adequate_answer"}.
 
+    When figures are returned, "confidence" is "high", or "low" when the best score is below
+    LOW_CONFIDENCE_BELOW (FR-002: a low-confidence match is shown with a visible notice).
+
     handbooks: optional list of handbook ids to search in (default None = all handbooks). The
     threshold is applied to the best score inside that selection.
 
@@ -159,7 +169,8 @@ def retrieve(query, k=5, index=None, query_vector=None, handbooks=None):
             "source_pdf_url": (f"{d['source_url']}#page={d['pdf_page']}"
                                if d.get("source_url") and d.get("pdf_page") else None),
         })
-    return {"results": results, "reason": None}
+    confidence = "low" if ranked[0][1] < LOW_CONFIDENCE_BELOW else "high"
+    return {"results": results, "reason": None, "confidence": confidence}
 
 
 def image_path_for(figure_id):
