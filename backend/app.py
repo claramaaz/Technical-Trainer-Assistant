@@ -1,4 +1,5 @@
-"""FastAPI app: GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/page-image, GET /health,
+"""FastAPI app: GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
+GET /figures/{id}/page-image, GET /health,
 and the React page at /
 (the built files in frontend/dist; create them with: cd frontend && npm run build).
 
@@ -19,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from backend import retrieval
 from backend.answer import generate_answer
 from backend.query_log import elapsed_ms, log_query
-from backend.retrieval import image_path_for, page_image_path_for, retrieve
+from backend.retrieval import image_path_for, page_image_path_for, retrieve, thumbnail_path_for
 
 DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
@@ -99,6 +100,15 @@ def figure_image(figure_id: str):
     if path is None:
         raise HTTPException(status_code=404, detail="figure not found")
     return FileResponse(path, media_type="image/png")
+
+
+@app.get("/figures/{figure_id}/thumbnail")
+def figure_thumbnail(figure_id: str):
+    # NFR-001: the compressed thumbnail shown first. DATABASE id, path from the index.
+    path = thumbnail_path_for(figure_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="thumbnail not available")
+    return FileResponse(path, media_type="image/webp")
 
 
 @app.get("/figures/{figure_id}/page-image")

@@ -315,3 +315,14 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **Checked:** 217 passed (Clara, 6 Nov).
 - **What we could NOT verify:** the value 0.70 is not justified yet; it only lets the notice be built. It must be set from the scores of the 50-question run and recorded in EVALUATION.md.
 - **Commit / PR:** branch `feature/P7-48-low-confidence`
+
+### 2026-11-06 - P7-49: compressed thumbnails (NFR-001)
+- **Who:** Clara
+- **Tool:** Claude (code), Claude Code (running the tests and the thumbnail script on the local database)
+- **What we asked:** NFR-001 asks for a first results page in under 5 s on a 3G connection, with figures first shown as compressed thumbnails and the full-size image loaded on request. The full PNGs are about 200 KB each.
+- **What came back:** `ingestion/make_thumbnails.py` (WebP, at most 480 px, quality 70, resumable, fills `figures.thumbnail_path`); a `thumbnail_url` field on every search result in `backend/retrieval.py` (None when no thumbnail exists; `image_url` is unchanged); the route `GET /figures/{id}/thumbnail` in `backend/app.py`; `tests/test_thumbnails.py`; `pillow>=10` in `requirements.txt`.
+- **Results:** 849 thumbnails made (347 for FAA-H-8083-15B, 502 for FAA-H-8083-25C), none missing. 4.8 MB of thumbnails against 73.6 MB of full images for the 15B, and 7.2 MB against 104.5 MB for the 25C (about 15 times smaller).
+- **What was wrong, and how it was caught:** Pillow was not in `requirements.txt`, so the tests could not even start on this branch (the new script imports it). Claude Code stopped at the first step and reported it. Fix: we added `pillow>=10` and installed the requirements again.
+- **Checked:** full suite 221 passed (Clara, 6 Nov). The question "four forces acting on an aircraft" returns figure 4-3 with `thumbnail_url` `/figures/55/thumbnail`; the route answers HTTP 200 with a WebP image of 7.5 KB.
+- **What we could NOT verify:** the real load time on a 3G connection (NFR-001) is not measured yet; it needs the interface to show the thumbnails first (Mia, P7-34) and a throttled-network test. The server warm-up took 28 s, then 82 s, then 90 s over three runs; we have not found out why (the PC was busy with other processes), to be re-measured on an idle machine.
+- **Commit / PR:** branch `feature/P7-49-thumbnails`
