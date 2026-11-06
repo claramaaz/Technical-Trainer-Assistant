@@ -228,4 +228,27 @@ Without the prefix (Hit@1 / Hit@5: caption 0.609 / 0.783, heading + caption 0.52
 - **More than one correct figure.** With two handbooks a question can have several correct figures. Example: "four forces acting on an airplane" -> 15B figure 4-3 (0.812) and 25C figure 3-1, page 3-3 (0.687, rank 5). Which results are acceptable is judged by humans (brief section 8), not by the automatic rule (expected figure at rank 1 / in the top 5), which knows only one figure per question.
 - **Cross-handbook case to judge:** Q003 returns 25C figure 17-7 first when both handbooks are searched (15B figure 3-9 is the expected one). Not counted as right or wrong yet; to be judged by a person.
 
+### 3.4 Run on the live search: `evaluation/run_eval.py` (P7-17), 25 questions
+
+Command (repository root, database running): `python evaluation/run_eval.py run 2026-11-06-25q`. Output: [`evaluation/runs/2026-11-06-25q/summary.md`](../evaluation/runs/2026-11-06-25q/summary.md) and `ranked.csv` (the 5 figures returned for every question and scope). Git commit of the code that was measured: 3856093. Tests: `tests/test_run_eval.py`.
+
+**What is measured.** Every question goes through the same code as `GET /search`: `rank()` (the PostgreSQL / pgvector query, top 5, before the threshold) and `retrieve()` (the 0.65 threshold). Two scopes: **own** = only the handbook named in the question (comparable with 3.2), **all** = both loaded handbooks (15B and 25C; what a learner gets). "Auto" counts a hit only when the returned figure is the expected one in the expected handbook (the same figure number in the other handbook does not count).
+
+| Scope | Rule | Questions | Hit@1 | Hit@5 | MRR@5 |
+| --- | --- | --- | --- | --- | --- |
+| own | auto (expected figure) | 23 | 0.652 (15/23) | 0.870 (20/23) | 0.743 |
+| all | auto (expected figure) | 23 | 0.478 (11/23) | 0.826 (19/23) | 0.634 |
+| own / all | human (scored 2, SPEC 5.3) | 0 of 23 fully judged | n/a | n/a | n/a |
+
+**Reading.**
+- *own* reproduces exactly the figure-document baseline of 3.2 (0.652 / 0.870 / 0.743), which was computed from the `.npy` files without the database. So the live search (database + `retrieve()`) ranks the figures the same way as the experiment it comes from.
+- *all*: for Q001, Q003, Q004 and Q008 a 25C figure is ranked first and the expected 15B figure second; for Q016 the expected figure leaves the top 5 (rank 2 in own). These 25C figures are not counted as hits by the automatic rule, but some may be just as correct (3.3). That is decided by the human judgements, not by this table.
+- Still outside the top 5 in both scopes: Q006, Q018, Q020 (the same three as in 3.2).
+
+**Threshold (0.65, FR-002).** No-answer accuracy 2/2 in both scopes (Q024 best score 0.614 over both handbooks, Q025 0.626). One answerable question is refused: Q018 (best score 0.641 in all); its expected figure is not in the top 5 in either scope, so the refusal did not hide a correct figure. The margin is very small: Q017 is answered correctly with 0.653, Q025 (no answer) scores 0.626. **The threshold is still not validated:** it was chosen on these same 25 questions and only 2 of them are no-answer questions. It must be re-checked on the full set with at least 6 no-answer questions (Q026-Q050).
+
+**Human judgements (SPEC 5.3).** `evaluation/judgements.csv` lists every (question, handbook, figure) pair returned for an answerable question: 166 pairs, of which 20 are pre-filled with 2 because they are the expected figure (SPEC 5.3 defines 2 as the expected figure) and 146 are still to be judged by a person (2 / 1 / 0). The script never overwrites a score already written. Judgements are keyed by handbook and printed figure number, so they stay valid after the database is reloaded.
+
+**Limits.** 23 answerable questions, one author, all written for 15B; one question moves a metric by 4.3 points. The 25C handbook has no questions of its own yet (they come with Q026-Q050).
+
 ## 4. Deliberate improvement: before and after (Week 10)
