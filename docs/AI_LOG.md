@@ -285,6 +285,17 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **What we could NOT verify:** no user is recorded yet (login does not exist; a later migration adds it). For a `no_answer`, `top_score` is empty because `retrieve()` does not return the score in that case. The error path was tested with fakes only.
 - **Commit / PR:** branch `feature/P7-28-query-log`
 
+### 2026-11-06 - P7-47: stored page images for "View source" (UC-07)
+- **Who:** Clara
+- **Tool:** Claude (code), Claude Code (running it on the local database)
+- **What we asked:** Follow the SPEC as written: UC-07 step 3 says the system shows "an image of the original handbook page, rendered and stored at ingestion", with a link to the FAA PDF at that page. Data and API side only; the "View source" screen is Mia's (P7-39).
+- **What came back:** migration `004_page_images.sql` (`pages.image_path`, view `searchable_pages`), `ingestion/render_pages.py` (resumable), `page_image_url` and `source_pdf_url` on every search result, `GET /figures/{id}/page-image`, `tests/test_page_images.py` (6 tests).
+- **What was wrong, and how it was caught:** Claude first proposed dropping the stored image and keeping only the PDF link (our decision of 4 Nov), which contradicts the SPEC (tag `spec-v1`) that the brief says we are assessed against. Clara caught it by re-reading UC-07 in the SPEC. Fix: follow the SPEC; the PDF link is kept as the second half of step 3.
+- **Checked:** 199 passed; 371/371 and 522/522 pages rendered; first result for "four forces acting on an aircraft" gives `/figures/55/page-image` and `...FAA-H-8083-15B.pdf#page=80`, HTTP 200.
+- **What we could NOT verify:** that the page image shown is the right page for every figure (checked on one figure only); the `#page=N` link was not opened in a browser; the "View source" screen does not exist yet.
+- **Commit / PR:** branch `feature/P7-47-page-images`
+
+
 ### 2026-11-06 - P7-17: evaluation run on the live search (`evaluation/run_eval.py`)
 - **Who:** Clara
 - **Tool:** Claude (writing the script and tests), Claude Code (running it on the local database)

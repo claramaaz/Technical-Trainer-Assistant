@@ -1,4 +1,5 @@
-"""FastAPI app: GET /search, GET /answer, GET /figures/{id}/image, GET /health, and the React page at /
+"""FastAPI app: GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/page-image, GET /health,
+and the React page at /
 (the built files in frontend/dist; create them with: cd frontend && npm run build).
 
 Run from the repository root:   python -m uvicorn backend.app:app
@@ -18,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from backend import retrieval
 from backend.answer import generate_answer
 from backend.query_log import elapsed_ms, log_query
-from backend.retrieval import image_path_for, retrieve
+from backend.retrieval import image_path_for, page_image_path_for, retrieve
 
 DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
@@ -95,6 +96,15 @@ def figure_image(figure_id: str):
     if path is None:
         raise HTTPException(status_code=404, detail="figure not found")
     return FileResponse(path, media_type="image/png")
+
+
+@app.get("/figures/{figure_id}/page-image")
+def figure_page_image(figure_id: str):
+    # UC-07: the stored image of the handbook page the figure is on. DATABASE id, path from the index.
+    path = page_image_path_for(figure_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="page image not available")
+    return FileResponse(path, media_type="image/jpeg")
 
 
 @app.get("/")

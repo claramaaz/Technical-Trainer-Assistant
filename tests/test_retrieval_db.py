@@ -68,7 +68,7 @@ def test_document_that_is_not_fully_loaded_returns_no_results(db, pg_test_dsn, t
 def test_search_code_reads_only_the_searchable_views():
     sql = retrieval.DESCRIBE_SQL + retrieval.RANK_SQL
     tables = set(re.findall(r"(?:FROM|JOIN)\s+(\w+)", sql, flags=re.I))
-    assert tables == {"searchable_figures", "searchable_figure_refs"}
+    assert tables == {"searchable_figures", "searchable_figure_refs", "searchable_pages"}
 
 
 def test_score_is_one_minus_cosine_distance(db, pg_test_dsn, tmp_path):

@@ -49,10 +49,13 @@ class Index:
 
 
 # One row per searchable figure; the passage is the first citing paragraph (position 0).
+# The page the figure is on gives the stored page image and the source PDF link (UC-07, P7-47).
 DESCRIBE_SQL = """
     SELECT f.id, f.figure_number, f.caption, f.image_path, f.printed_page, f.handbook, f.document_id,
-           (SELECT r.text FROM searchable_figure_refs r WHERE r.figure_id = f.id AND r.position = 0)
+           (SELECT r.text FROM searchable_figure_refs r WHERE r.figure_id = f.id AND r.position = 0),
+           f.pdf_page, p.image_path, p.source_url
     FROM searchable_figures f
+    LEFT JOIN searchable_pages p ON p.document_id = f.document_id AND p.pdf_index = f.pdf_page
     ORDER BY f.id"""
 
 # Score = 1 - cosine distance. The id breaks ties so the order is always the same.
@@ -71,21 +74,30 @@ def connect(dsn):
     return conn
 
 
-def load_index_from(dsn):
-    """Describe every searchable figure (no vectors: the database does the ranking)."""
+def load_index_from(dsn, image_root=None):
+    """Describe every searchable figure (no vectors: the database does the ranking).
+
+    image_root: folder of the image files (default data/extracted); tests pass their own."""
+    image_root = Path(image_root) if image_root else ROOT / "data" / "extracted"
     with connect(dsn) as conn:
         rows = conn.execute(DESCRIBE_SQL).fetchall()
     documents = {}
-    for fid, number, caption, image_key, printed_page, handbook, handbook_id, passage in rows:
+    for (fid, number, caption, image_key, printed_page, handbook, handbook_id, passage,
+         pdf_page, page_key, source_url) in rows:
+        page_image = image_root / page_key if page_key else None
         documents[fid] = {
             "figure_number": number,
             "caption": caption,
             # image_path is a relative key such as FAA-H-8083-15B/figures/4-12.png
-            "image_path": ROOT / "data" / "extracted" / image_key,
+            "image_path": image_root / image_key,
             "passage": passage or "",
             "printed_page": printed_page,
             "handbook_id": handbook_id,
             "handbook": handbook,
+            "pdf_page": pdf_page,
+            # None when the page was not rendered: "View source" then says so (UC-07 A1)
+            "page_image_path": page_image if page_image and page_image.is_file() else None,
+            "source_url": source_url,
         }
     return Index(documents, dsn)
 
@@ -142,6 +154,10 @@ def retrieve(query, k=5, index=None, query_vector=None, handbooks=None):
             "handbook": d["handbook"],
             "printed_page": d["printed_page"],
             "score": score,
+            # UC-07 "View source": stored image of the page, and the FAA PDF opened at that page
+            "page_image_url": f"/figures/{i}/page-image" if d.get("page_image_path") else None,
+            "source_pdf_url": (f"{d['source_url']}#page={d['pdf_page']}"
+                               if d.get("source_url") and d.get("pdf_page") else None),
         })
     return {"results": results, "reason": None}
 
@@ -151,9 +167,21 @@ def image_path_for(figure_id):
 
     The printed number ("3-1") is not an id: it exists in every handbook. The path comes from the
     index, never from the text of the URL."""
+    d = _figure(figure_id)
+    return d["image_path"] if d and d["image_path"].is_file() else None
+
+
+def page_image_path_for(figure_id):
+    """Stored image of the page a figure is on (UC-07), by DATABASE id; None if unknown or not rendered."""
+    d = _figure(figure_id)
+    path = d.get("page_image_path") if d else None
+    return path if path and path.is_file() else None
+
+
+def _figure(figure_id):
+    """The index entry of a DATABASE id given as int or digit string, else None (never a path)."""
     if isinstance(figure_id, str) and figure_id.isascii() and figure_id.isdigit():
         figure_id = int(figure_id)
     if not isinstance(figure_id, int) or isinstance(figure_id, bool):
         return None
-    d = load_index().documents.get(figure_id)
-    return d["image_path"] if d and d["image_path"].is_file() else None
+    return load_index().documents.get(figure_id)
