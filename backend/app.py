@@ -2,8 +2,9 @@
 (the built files in frontend/dist; create them with: cd frontend && npm run build).
 
 Run from the repository root:   python -m uvicorn backend.app:app
-No login yet.
+No login yet. Every question to /search and /answer is written to query_log (FR-007, backend/query_log.py).
 """
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -11,6 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.answer import generate_answer
+from backend.query_log import elapsed_ms, log_query
 from backend.retrieval import image_path_for, retrieve
 
 DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -31,16 +33,29 @@ def health():
 def search(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, ge=1, le=20)):
     if not q.strip():
         raise HTTPException(status_code=422, detail="q must not be blank")
-    return retrieve(q.strip(), k)
+    query, start = q.strip(), time.perf_counter()
+    try:
+        found = retrieve(query, k)
+    except Exception as exc:
+        log_query("search", query, elapsed_ms(start), error=exc)
+        raise
+    log_query("search", query, elapsed_ms(start), found=found)
+    return found
 
 
 @app.get("/answer")
 def answer(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, ge=1, le=20)):
     if not q.strip():
         raise HTTPException(status_code=422, detail="q must not be blank")
-    found = retrieve(q.strip(), k)
-    return {"answer": generate_answer(q.strip(), found["results"], found["reason"]),
-            "results": found["results"]}
+    query, start = q.strip(), time.perf_counter()
+    try:
+        found = retrieve(query, k)
+        answer_ = generate_answer(query, found["results"], found["reason"])
+    except Exception as exc:
+        log_query("answer", query, elapsed_ms(start), error=exc)
+        raise
+    log_query("answer", query, elapsed_ms(start), found=found, answer_mode=answer_.get("mode"))
+    return {"answer": answer_, "results": found["results"]}
 
 
 @app.get("/figures/{figure_id}/image")

@@ -19,6 +19,14 @@ def rank_fake_indexes_with_numpy(monkeypatch):
         numpy_rank if isinstance(index, FakeIndex) else real_rank)(index, q, k, handbooks))
 
 
+@pytest.fixture(autouse=True)
+def no_query_log_in_real_database(monkeypatch):
+    """Tests must not write test questions into the real query_log (P7-28). tests/test_query_log.py
+    turns the log back on, pointed at the temporary database."""
+    from backend import query_log
+    monkeypatch.setattr(query_log, "ENABLED", False)
+
+
 @pytest.fixture(scope="session")
 def questions():
     with open(ROOT / "evaluation" / "questions.csv", encoding="utf-8-sig", newline="") as fh:
