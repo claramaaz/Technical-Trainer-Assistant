@@ -20,6 +20,8 @@
 | 1.0 | 19/10/2026 | Converted to Markdown. Added section 5 (chunking strategy, page numbering, evaluation metrics), FR-009 (answers with cited sources), low-confidence handling in FR-002, decisions for UC-04 A2 and UC-07, stack decisions (2.5), corrected cross-references. |
 | 1.1 | 28/10/2026 | 5.1: chunk size cap set to 200 words from the measurement of FAA-H-8083-15B; embedding model must accept ≥ 512 tokens; content covered by chunking listed. |
 
+| 1.2 | 06/11/2026 | 2.5: embedding model (BAAI/bge-small-en-v1.5, 384 dimensions) and language model (Groq) recorded, as 2.5 required once chosen. 5.1: the image embedding of each figure is required, not optional, to match the brief (sections 4 and 7, joint retrieval over text and images). FR-008 priority Should -> Must, because the brief assesses re-indexing in the administrative interface (section 12). |
+
 Any later divergence from this document is recorded in this change log with its reason.
 
 ## 2. Introduction
@@ -87,8 +89,8 @@ The FAA handbook index and PDF URLs remain stable. Figure extraction quality var
 | Frontend | React (responsive web, no native app) | Confirmed |
 | PDF extraction | PyMuPDF | Confirmed |
 | Figure images | Stored as files in object storage; the database stores their path | Confirmed |
-| Embedding model | Chosen in Week 3 on the baseline evaluation; recorded here when chosen. Must accept at least 512 input tokens (5.1) | Open |
-| Language model for answers | Chosen in Week 4; recorded here when chosen | Open |
+| Embedding model | BAAI/bge-small-en-v1.5: 384 dimensions per vector (`vector(384)` in pgvector), about 33 M parameters, up to 512 input tokens (meets 5.1). Free, runs on a CPU, light enough for a free host. Measured on the baseline (EVALUATION.md 3.1-3.2). A larger model (bge-base, 768 dimensions) is a candidate for the deliberate improvement; changing the model needs a new migration and a re-embedding. | Confirmed (Week 3; size discussed with the supervisor, 3 Nov) |
+| Language model for answers | Groq, free tier, model `openai/gpt-oss-120b`, through an OpenAI-compatible API. Provider, model and key are read only from `.env`, so the provider can be changed without code changes. The model only rewrites retrieved passages (FR-009, BR-004); without it the system answers with extracted sentences. | Confirmed (supervisor, 3 Nov) |
 | Hosting | Chosen before Week 6; recorded here when chosen | Open |
 | Task tracking | Jira | Confirmed (supervisor) |
 
@@ -187,7 +189,7 @@ The FAA handbook index and PDF URLs remain stable. Figure extraction quality var
 | User-Level Requirement | The admin shall be able to rebuild the search content after corrections or changes. |
 | System-Level Requirement | The system shall allow the admin to start re-indexing for one handbook or for the whole corpus, and shall show the outcome (success or failure) once it ends. If re-indexing fails, the previous index stays active. |
 | Primary User(s) | Admin |
-| Priority | Should |
+| Priority | Must |
 | Acceptance Criteria | After re-indexing a handbook, a search returns results from the rebuilt content and the admin sees the outcome of the operation. |
 
 ### FR-009 - Answer with Cited Sources
@@ -260,7 +262,7 @@ The size cap is not chosen in advance. In Week 2 the team measures the paragraph
 
 Content covered: chapters 1–11, Appendix A, Appendix B and the Glossary (pages with a printed number such as 4-8, A-1, G-7). Not chunked: front matter, table of contents, Index, and dot-leader lists (e.g. the shorthand table in Appendix A), because they list page numbers or abbreviations rather than explain anything. Headings are recognised by font (Helvetica-Bold 12 pt, Helvetica-Bold 10 pt, Times-BoldItalic 11 pt) and never carry over into the next chapter.
 
-**Figure documents.** Each figure is also a search item of its own. Its searchable text is its caption, the paragraphs that reference it, and its section heading. A figure can then be found by what the handbook says about it, not only by its short caption. The figure image itself may additionally be embedded with an image model for joint text–image retrieval; whether this is kept is decided by measurement (5.3).
+**Figure documents.** Each figure is also a search item of its own. Its searchable text is its caption, the paragraphs that reference it, and its section heading. A figure can then be found by what the handbook says about it, not only by its short caption. The figure image itself is also embedded with an image model, because the brief (sections 4 and 7) requires joint retrieval over text and images; how much the image score weighs in the final ranking is decided by measurement (5.3).
 
 ### 5.2 Page numbering
 
