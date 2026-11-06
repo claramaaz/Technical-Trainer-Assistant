@@ -294,3 +294,14 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **Checked:** 199 passed; 371/371 and 522/522 pages rendered; first result for "four forces acting on an aircraft" gives `/figures/55/page-image` and `...FAA-H-8083-15B.pdf#page=80`, HTTP 200.
 - **What we could NOT verify:** that the page image shown is the right page for every figure (checked on one figure only); the `#page=N` link was not opened in a browser; the "View source" screen does not exist yet.
 - **Commit / PR:** branch `feature/P7-47-page-images`
+
+
+### 2026-11-06 - P7-17: evaluation run on the live search (`evaluation/run_eval.py`)
+- **Who:** Clara
+- **Tool:** Claude (writing the script and tests), Claude Code (running it on the local database)
+- **What we asked:** A script that asks every question of `evaluation/questions.csv` to the live search, keeps the 5 returned figures, prepares the human relevance judgements of SPEC 5.3, and reports Hit@1, Hit@5, MRR@5, no-answer accuracy and the answerable questions refused by the threshold.
+- **What came back:** `evaluation/run_eval.py` (`run` and `score`), `tests/test_run_eval.py` (9 tests, a fake index with two handbooks that both have a figure 3-1, so a figure from the wrong handbook must not count as a hit), the run `evaluation/runs/2026-11-06-25q/` and `evaluation/judgements.csv`.
+- **How we checked it:** the "own" scope gives exactly the numbers of the offline baseline in EVALUATION.md 3.2 (0.652 / 0.870 / 0.743), computed earlier by a different script from the `.npy` files. Full suite 199 passed.
+- **What was wrong, and how it was caught:** Claude Code's summary of the run said Q018 was "refused by the threshold" as if a correct answer had been lost. Reading `summary.md` showed that Q018's expected figure is not in the top 5 in either scope, so the refusal hid nothing. Corrected in EVALUATION.md 3.4.
+- **What we could NOT verify:** the human metrics are empty (146 of 166 pairs not judged yet). The threshold is not validated (2 no-answer questions only).
+- **Commit / PR:** branch `feature/P7-17-run-eval`
