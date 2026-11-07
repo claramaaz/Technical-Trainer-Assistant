@@ -24,3 +24,28 @@ Q022,The pilot notices the magnetic compass is turning erratically while banking
 Q023,What are the indications of a nose-high unusual attitude?,symptom,FAA-H-8083-15B,7-39,7-27,Clara
 Q024,What is the maximum passenger capacity of a Boeing 747?,no-answer,FAA-H-8083-15B,,,Clara
 Q025,How do you reset the flight computer on an Airbus A320?,no-answer,FAA-H-8083-15B,,,Clara
+Q026,On a humid day with reduced throttle my engine rpm slowly drops and the engine runs rough. What is happening?,symptom,FAA-H-8083-25C,7-11,7-9,Mia
+Q027,During a long full-power climb the cylinder head temperature gets very high and the engine starts knocking. What could be the cause?,symptom,FAA-H-8083-25C,7-21,7-19,Mia
+Q028,While climbing my altimeter stays stuck and the vertical speed indicator shows zero. Why?,symptom,FAA-H-8083-25C,8-11,8-12,Mia
+Q029,In a right turn the ball of the turn coordinator has moved to the inside of the turn. What am I doing wrong?,symptom,FAA-H-8083-25C,8-22,8-18,Mia
+Q030,Flying in clouds I feel my wings are level but the altimeter keeps unwinding and pulling back makes it worse. What is happening?,symptom,FAA-H-8083-25C,17-5,17-7,Mia
+Q031,Right after takeoff I suddenly gained airspeed and then the airplane sank fast even at full power. What did I fly into?,symptom,FAA-H-8083-25C,12-17,12-11,Mia
+Q032,When I flare just above the runway the airplane keeps floating and does not want to touch down. Why?,symptom,FAA-H-8083-25C,5-17,5-11,Mia
+Q033,When I roll into a left turn using only the ailerons the nose first swings to the right. Why?,symptom,FAA-H-8083-25C,6-5,6-3,Mia
+Q034,In a nose-high climb at full power the airplane keeps pulling to the left. What causes this?,symptom,FAA-H-8083-25C,5-51,5-33,Mia
+Q035,What does a minus reading on the ammeter mean?,topic,FAA-H-8083-25C,7-35,7-33,Mia
+Q036,What do the PAPI lights show when I am on the glide path or too high or too low?,topic,FAA-H-8083-25C,14-30,14-17,Mia
+Q037,My radio failed near a towered airport. What do the tower light signals mean?,topic,FAA-H-8083-25C,14-42,14-25,Mia
+Q038,How do I use the segmented circle at an airport to find the traffic pattern and landing direction?,topic,FAA-H-8083-25C,14-38,14-21,Mia
+Q039,How do I draw a wind triangle to find my heading and groundspeed?,topic,FAA-H-8083-25C,16-21,16-15,Mia
+Q040,How do I calculate the moment of a weight placed at a distance from the datum?,topic,FAA-H-8083-25C,10-3,10-6,Mia
+Q041,How do I find density altitude from the chart using outside air temperature and pressure altitude?,topic,FAA-H-8083-25C,11-4,11-4,Mia
+Q042,What are the stages in the life of a thunderstorm?,topic,FAA-H-8083-25C,12-28,12-23,Mia
+Q043,How does oil flow through a wet-sump engine oil system?,topic,FAA-H-8083-25C,7-17,7-16,Mia
+Q044,How do I read a V-g diagram?,topic,FAA-H-8083-25C,5-55,5-38,Mia
+Q045,What torque should I use to tighten the spark plugs on a Lycoming O-360 engine?,no-answer,FAA-H-8083-25C,,,Mia
+Q046,How long is the holdover time of Type IV de-icing fluid in light snow?,no-answer,FAA-H-8083-25C,,,Mia
+Q047,How can a pilot get over jet lag after crossing several time zones?,no-answer,FAA-H-8083-25C,,,Mia
+Q048,What was the cruise speed and range of the Concorde?,no-answer,FAA-H-8083-25C,,,Mia
+Q049,How much is the landing fee for a small airplane at a big airport?,no-answer,FAA-H-8083-25C,,,Mia
+Q050,What is the average salary of an airline captain?,no-answer,FAA-H-8083-25C,,,Mia
