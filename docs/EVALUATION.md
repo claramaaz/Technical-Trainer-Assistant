@@ -135,6 +135,20 @@ Because of the two mis-printed captions, 6-48, 10-31, 11-32 and 10-8 have no ref
 ## 2. Evaluation set (Week 3)
 *(50+ questions, each with the expected figure identified by handbook and printed page)*
 
+**Content.** 50 questions in `evaluation/questions.csv`: Q001-Q025 written by Clara for FAA-H-8083-15B, Q026-Q050 written by Mia for FAA-H-8083-25C. Each answerable question names the expected figure by handbook, figure number and printed page.
+
+| Type | Count | Meaning |
+| --- | --- | --- |
+| topic | 30 | a technical topic named in the question |
+| symptom | 12 | a problem described without the technical names |
+| no-answer | 8 | the corpus has no answer (tests FR-002, UC-02 A1) |
+
+42 questions are answerable, 8 are not.
+
+**Commit dates (brief section 8).** Q001-Q025: 2026-10-28 (commit 2b09bb4). Q026-Q050: 2026-11-07 (commit 0256e4f). Both before the final fortnight.
+
+**Check that the expected figures exist.** `python evaluation/check_questions_in_db.py` looks up every answerable question's (handbook, figure number) in the database and compares the printed page. Result on 2026-11-07: 42 checked, 0 figures missing, 0 printed pages different. This proves the set contains no typo in its references; it does not prove that the figure answers the question (that is the human judgement, 3.5).
+
 ## 3. Baseline retrieval results (Week 3)
 
 ### 3.1 Baseline v1: text chunks only, BAAI/bge-small-en-v1.5, no database
@@ -250,5 +264,30 @@ Command (repository root, database running): `python evaluation/run_eval.py run 
 **Human judgements (SPEC 5.3).** `evaluation/judgements.csv` lists every (question, handbook, figure) pair returned for an answerable question: 166 pairs, of which 20 are pre-filled with 2 because they are the expected figure (SPEC 5.3 defines 2 as the expected figure) and 146 are still to be judged by a person (2 / 1 / 0). The script never overwrites a score already written. Judgements are keyed by handbook and printed figure number, so they stay valid after the database is reloaded.
 
 **Limits.** 23 answerable questions, one author, all written for 15B; one question moves a metric by 4.3 points. The 25C handbook has no questions of its own yet (they come with Q026-Q050).
+
+### 3.5 Baseline on the full set: 50 questions (P7-19)
+
+Command: `python evaluation/run_eval.py run 2026-11-07-50q`. Output: [`evaluation/runs/2026-11-07-50q/summary.md`](../evaluation/runs/2026-11-07-50q/summary.md). Code measured: commit a620688. Model BAAI/bge-small-en-v1.5, top 5, threshold 0.65, text chunks and figure documents as in 3.2-3.4. Same two scopes as 3.4 (own, all).
+
+| Scope | Rule | Questions | Hit@1 | Hit@5 | MRR@5 |
+| --- | --- | --- | --- | --- | --- |
+| own | auto (expected figure) | 42 | 0.643 (27/42) | 0.833 (35/42) | 0.720 |
+| all | auto (expected figure) | 42 | 0.524 | 0.786 | 0.639 |
+| own / all | human (scored 2, SPEC 5.3) | 0 of 42 fully judged | n/a | n/a | n/a |
+
+**By question type (own scope, counted from the per-question table of the summary).**
+
+| Type | Answerable | Hit@1 | Hit@5 |
+| --- | --- | --- | --- |
+| topic | 30 | 22/30 = 0.733 | 28/30 = 0.933 |
+| symptom | 12 | 5/12 = 0.417 | 7/12 = 0.583 |
+
+Symptom questions are clearly the weakest case: this is the first candidate for the deliberate improvement (section 4).
+
+**Comparison with 3.4.** The 25-question numbers (0.652 / 0.870 / 0.743) and these (0.643 / 0.833 / 0.720) are measured on different sets (23 and 42 answerable questions), so this is not a before/after of an improvement. The slightly lower values come from the harder questions added in Q026-Q050 (9 of the 12 symptom questions).
+
+**Threshold (0.65).** No-answer accuracy: 7/8 (own) and 6/8 (all). Best scores of the 8 no-answer questions in the `all` scope: 0.585 to 0.673 (Q047 = 0.673 and Q046 = 0.651 are above 0.65 and were not refused). Answerable questions refused: 3/42 in own (Q018, Q026, Q031) and 2/42 in all (Q018, Q026); for none of them was the expected figure ranked first. The scores of wrong and right answers overlap: Q047 (no answer) scores 0.673, Q017 (correct) 0.653, so no single threshold separates them perfectly. **The threshold stays provisional (0.65, low-confidence 0.70):** it was observed on this same set and must be fixed only after the human judgements.
+
+**Limits.** No human judgement yet (`evaluation/judgements.csv`: 259 pairs left to judge); one author per half of the set; Q026-Q050 cover only 25C; the "all" numbers are pessimistic because an equally correct figure from the other handbook is not counted as a hit by the automatic rule (3.3).
 
 ## 4. Deliberate improvement: before and after (Week 10)
