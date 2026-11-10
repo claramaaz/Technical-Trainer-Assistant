@@ -28,3 +28,6 @@ Thumbs.db
 
 # Vite cache
 frontend/.vite/
+
+# Personal Claude Code instructions (not shared)
+CLAUDE.local.md
