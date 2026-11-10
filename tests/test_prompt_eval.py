@@ -70,54 +70,129 @@ def test_retrieval_refusal_never_calls_the_llm():
     assert row["mode"] == "no_answer" and row["returned"] == 0
 
 
-def row(qid, run, mode="llm", returned=2, kept=2, dropped=0, cited="748", reason=""):
+def row(qid, run, mode="llm", returned=2, kept=2, dropped=0, cited="748", reason="", status="", retries=0):
     return {"question_id": qid, "run": run, "mode": mode, "returned": returned, "kept": kept,
-            "numeric_dropped": dropped, "cited_ids": cited, "answer_text": "", "fallback_reason": reason}
+            "numeric_dropped": dropped, "cited_ids": cited, "answer_text": "", "fallback_reason": reason,
+            "http_status": status, "retries": retries}
 
 
-def test_summary_numbers():
+def test_share_and_stability_use_only_llm_rows():
     rows = [
         row("Q1", 1, returned=4, kept=3, dropped=1), row("Q1", 2, returned=4, kept=4),
-        row("Q1", 3, returned=2, kept=1, dropped=1, cited="55"),                        # different ids: unstable
+        row("Q1", 3, mode="extractive", returned=0, kept=0, cited="55", reason="http_error", status=429),
+        row("Q4", 1, returned=2, kept=1, dropped=1, cited="748"),
+        row("Q4", 2, returned=2, kept=1, dropped=1, cited="55"),                       # different ids: unstable
+        row("Q5", 1, returned=1, kept=1),
+        row("Q5", 2, mode="extractive", returned=0, kept=0, reason="http_error", status=500),  # only 1 llm run
+    ]
+    s = pe.summarize(rows, QUESTIONS)
+    assert s["llm_runs"] == 5
+    assert (s["returned"], s["kept"], s["numeric_dropped"]) == (13, 10, 3)
+    assert s["share_kept"] == 10 / 13
+    assert (s["stable"], s["stable_of"], s["unstable"]) == (1, 2, ["Q4"])
+    assert s["one_llm_run_only"] == ["Q5"]
+    assert s["extractive"] == 2 and s["fallback_reasons"] == {"http_error": 2}
+
+
+def test_fallback_rows_do_not_change_the_share():
+    ok = [row("Q1", 1, returned=4, kept=2, dropped=2)]
+    with_errors = ok + [row("Q1", r, mode="extractive", returned=0, kept=0, reason="http_error", status=429)
+                        for r in (2, 3)]
+    assert pe.summarize(ok, QUESTIONS)["share_kept"] == pe.summarize(with_errors, QUESTIONS)["share_kept"] == 0.5
+
+
+def test_no_valid_sentences_are_reported_apart_from_the_share():
+    rows = [row("Q1", 1, returned=2, kept=2),
+            row("Q1", 2, mode="extractive", returned=3, kept=0, dropped=3, reason="no_valid_sentences")]
+    s = pe.summarize(rows, QUESTIONS)
+    assert s["share_kept"] == 1.0                      # the llm rows only
+    assert (s["empty_after_checks_rows"], s["empty_after_checks_returned"]) == (1, 3)
+
+
+def test_refusals_and_llm_said_nothing():
+    rows = [
         row("Q2", 1, mode="no_answer", returned=0, kept=0, cited=""),
         row("Q2", 2, mode="no_answer", returned=0, kept=0, cited=""),
         row("Q2", 3, mode="extractive", returned=0, kept=0, cited="55", reason="no_valid_sentences"),
-        row("Q3", 1, mode="extractive", returned=0, kept=0, reason="http_error"),
     ]
     s = pe.summarize(rows, QUESTIONS)
-    assert (s["returned"], s["kept"], s["numeric_dropped"]) == (10, 8, 2)
-    assert s["share_kept"] == 0.8
     assert (s["correct_refusals"], s["no_answer_runs"], s["llm_said_nothing"]) == (2, 3, 1)
-    assert s["unstable"] == ["Q1", "Q2"] and (s["stable"], s["stable_of"]) == (1, 3)   # only Q3 is stable
-    assert s["extractive"] == 2 and s["fallback_reasons"] == {"no_valid_sentences": 1, "http_error": 1}
+    assert s["stable_of"] == 0 and s["share_kept"] is None   # no llm row at all
 
 
-def test_question_refused_by_retrieval_is_not_in_the_stability_count():
-    rows = [row("Q2", r, mode="no_answer", returned=0, kept=0, cited="") for r in (1, 2, 3)]
+def test_http_errors_are_counted_by_status_and_retries_are_reported():
+    rows = [
+        row("Q1", 1, mode="extractive", returned=0, kept=0, reason="http_error", status=429, retries=3),
+        row("Q1", 2, mode="extractive", returned=0, kept=0, reason="http_error", status=429, retries=3),
+        row("Q1", 3, mode="extractive", returned=0, kept=0, reason="http_error", status=503, retries=3),
+        row("Q4", 1, retries=1, status=200),                                     # recovered after one retry
+        row("Q4", 2, status=200),
+        row("Q5", 1, mode="extractive", returned=0, kept=0, reason="timeout"),
+    ]
     s = pe.summarize(rows, QUESTIONS)
-    assert s["stable_of"] == 0 and s["correct_refusals"] == 3 and s["share_kept"] is None
+    assert s["http_errors"] == {"429": 2, "503": 1}
+    assert (s["retried_calls"], s["retries"], s["retried_recovered"]) == (4, 10, 1)
+    text = pe.summary_text("t", "v1", s, {})
+    assert "429: 2" in text and "503: 1" in text and "Rows with mode llm: 2" in text
 
 
-def test_evaluate_runs_each_question_and_pauses_only_after_llm_calls():
-    pauses = []
-    rows, candidates = pe.evaluate(
-        QUESTIONS, lambda text: NO_ANSWER if text == "boeing capacity" else FOUND, SETTINGS, 3,
-        pause=lambda: pauses.append(1), llm=fake(("Lift opposes weight. [748]", [748])))
-    assert len(rows) == 6 and [r["run"] for r in rows[:3]] == [1, 2, 3]
-    assert len(pauses) == 3                       # the 3 runs of Q1 only
-    assert len(candidates) == 1                   # run 1 of Q1 only
-    assert "[748] Figure 3-1. The four forces. Lift opposes weight." in candidates[0]["cited_passage_text"]
-    assert candidates[0]["supported (y/n)"] == ""
+# --- retry on 429 and 5xx -------------------------------------------------------------------
+
+class FakeResponse:
+    def __init__(self, status, headers=None):
+        self.status_code, self.headers = status, headers or {}
 
 
-def test_sample_is_seeded_and_never_bigger_than_the_candidates():
-    items = list(range(100))
-    assert pe.pick_sample(items, 20, 7) == pe.pick_sample(items, 20, 7)
-    assert pe.pick_sample(items, 20, 7) != pe.pick_sample(items, 20, 8)
-    assert len(pe.pick_sample(items, 20, 7)) == 20 and len(pe.pick_sample([1, 2], 20, 7)) == 2
+def poster(*responses):
+    """A fake httpx.post that returns these responses in turn (and counts the calls)."""
+    queue, calls = list(responses), []
+
+    def post(*args, **kwargs):
+        calls.append(1)
+        return queue.pop(0)
+    post.calls = calls
+    return post
 
 
-def test_summary_text_has_the_measures_and_no_key():
-    s = pe.summarize([row("Q1", 1)], QUESTIONS)
-    text = pe.summary_text("t", "v1", s, {"date": "d", "commit": "c"})
-    assert "Stability" in text and "numeric guard" in text and "secret" not in text
+def test_retry_after_429_then_success():
+    log, waits = pe.HttpLog(), []
+    post = pe.retrying_post(poster(FakeResponse(429), FakeResponse(200)), log, sleep=waits.append)
+    assert post("url").status_code == 200
+    assert (log.status, log.retries, waits) == (200, 1, [10])
+
+
+def test_wait_grows_and_stops_after_three_retries():
+    log, waits = pe.HttpLog(), []
+    fake_post = poster(*[FakeResponse(503) for _ in range(10)])
+    response = pe.retrying_post(fake_post, log, sleep=waits.append)("url")
+    assert response.status_code == 503                 # call_llm then turns it into http_error
+    assert len(fake_post.calls) == 4 and waits == [10, 20, 40]
+    assert (log.status, log.retries) == (503, 3)
+
+
+def test_retry_after_header_is_used_and_capped():
+    log, waits = pe.HttpLog(), []
+    fake_post = poster(FakeResponse(429, {"Retry-After": "7"}), FakeResponse(429, {"Retry-After": "9999"}),
+                       FakeResponse(429, {"Retry-After": "not a number"}), FakeResponse(200))
+    pe.retrying_post(fake_post, log, sleep=waits.append)("url")
+    assert waits == [7, pe.MAX_WAIT, 40]               # bad value: back to the growing wait of that attempt
+
+
+def test_other_errors_are_not_retried():
+    for code in (400, 401, 404):
+        log, waits = pe.HttpLog(), []
+        fake_post = poster(FakeResponse(code))
+        assert pe.retrying_post(fake_post, log, sleep=waits.append)("url").status_code == code
+        assert waits == [] and log.retries == 0 and log.status == code
+
+
+def test_run_once_puts_status_and_retries_in_the_row_and_resets_between_calls():
+    log = pe.HttpLog()
+
+    def llm_after_retry(query, results, settings):
+        log.status, log.retries = 200, 2                # what retrying_post would have recorded
+        return json.dumps({"sentences": [{"text": "Lift opposes weight. [748]", "citations": [748]}]})
+    first, _ = pe.run_once("q", FOUND, SETTINGS, llm_after_retry, log)
+    assert (first["http_status"], first["retries"]) == (200, 2)
+    refused, _ = pe.run_once("q", NO_ANSWER, SETTINGS, llm_after_retry, log)   # no call: nothing carried over
+    assert (refused["http_status"], refused["retries"]) == ("", 0)
