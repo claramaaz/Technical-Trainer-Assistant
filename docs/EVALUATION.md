@@ -290,4 +290,38 @@ Symptom questions are clearly the weakest case: this is the first candidate for 
 
 **Limits.** No human judgement yet (`evaluation/judgements.csv`: 259 pairs left to judge); one author per half of the set; Q026-Q050 cover only 25C; the "all" numbers are pessimistic because an equally correct figure from the other handbook is not counted as a hit by the automatic rule (3.3).
 
+### 3.6 Reliability of the answer prompt (P7-26, supervisor request of 3 Nov)
+
+**Question.** Does the LLM that writes the answer (Groq `openai/gpt-oss-120b`, temperature 0) follow the system prompt: answer only from the retrieved passages, cite every sentence, invent no number (BR-004), and refuse when nothing answers the question (FR-002)?
+
+**Method.** `python evaluation/prompt_eval.py <run> --prompt v1|v2`. Each of the 50 questions goes through the same path as `GET /answer` (`retrieve(q, 5)` then `generate_answer`), with 3 answer runs per question (retrieval is deterministic). The script counts the sentences the LLM returned, those kept (cited with a valid passage id, numbers present in the cited passages) and those removed by the numeric guard, and records every fallback with its reason and HTTP status. Prompt-quality measures are computed only on runs where the LLM answered (mode `llm`); service failures are reported apart. A seeded sample of 20 kept sentences is written to `citation_check.csv` and judged by a person: `y` when everything the sentence states is in the cited passage, `n` otherwise.
+
+**Runs.**
+- `2026-11-09-prompt-v1`: **not interpretable.** 67 of 126 LLM calls ended as `http_error` (the HTTP status was not recorded yet). The script was changed to record the status, retry on 429/5xx and compute the measures on `llm` rows only. Kept as evidence.
+- `2026-11-09-prompt-v2`: stopped by the daily free-tier quota (66 `http_error`, 17 with status 429). Not used.
+- `2026-11-09-prompt-v1b` and `2026-11-10-prompt-v2`: no HTTP error. These two are compared below.
+
+| Measure (126 answer runs sent to the LLM, 24 refused by retrieval) | v1 (`2026-11-09-prompt-v1b`) | v2 (`2026-11-10-prompt-v2`) |
+| --- | --- | --- |
+| Runs answered by the LLM (mode `llm`) | 92 | 103 |
+| Runs where the LLM returned no sentence (`no_valid_sentences`) | 34 | 23 |
+| Sentences kept / returned | 151/154 = 98.1 % | 201/202 = 99.5 % |
+| Removed by the numeric guard | 3 | 1 |
+| Removed for a missing or unknown citation | 0 | 0 |
+| Stability: same cited ids in all 3 runs | 24/31 = 77.4 % | 24/35 = 68.6 % |
+| No-answer questions refused by retrieval (runs) | 18/24 | 18/24 |
+
+**What changed in v2 and why.** In v1 the LLM returned no sentence for 10 answerable questions (Q005, Q006, Q011, Q019, Q020, Q031, Q036, Q037, Q043 on all 3 runs, Q042 on 1). For several of them the expected figure was ranked first: the stored text only points to the figure ("A precision approach path indicator ... [Figure 14-30]"), and the actual answer (light colours, light-gun signals, oil flow) is in the drawing. v2 (`backend/prompts/answer_system_v2.txt`) adds two rules: (1) when a passage is about the topic but its text does not give the full answer, state what the text says and point to the figure by its number; (2) do not add causes, consequences or general rules the passage does not state. Result: Q006, Q019, Q037, Q043 are now answered on every run and Q005 on 2 of 3 (for example Q043: "In a wet-sump system the oil is located in a sump that is an integral part of the engine. [888] Figure 7-17 shows this wet-sump oil system. [888]"). Q011, Q020, Q031 and Q036 are still refused.
+
+**Citation support (human judgement, v2, `evaluation/runs/2026-11-10-prompt-v2/citation_check.csv`).** 15/20 sentences are fully supported by the cited passage (75 %). The 5 others: one inference not in the passage (row 1, Q030), one sentence mixing two instruments (row 12, Q009), one reversed statement (row 18, Q009), and two sentences completed beyond a stored passage that is cut mid-sentence (rows 19 and 20, Q039 and Q027).
+
+**Reading.**
+- The automatic checks work as designed: no uncited sentence and no unknown id reached the reader, and the numeric guard removed the sentences with an unsupported number.
+- They do not catch a wrong statement that cites a real passage and contains no number: 5 of 20 sampled sentences. This is the main limit of the answer layer, and the reason the figure, caption, handbook and page are always shown next to the text (BR-002).
+- Stability is lower in v2 on more questions (35 vs 31). With one run per prompt, differences of a few points are within noise; v2 is kept because it answers more figure-type questions without lowering the share of kept sentences.
+
+**Problems found, to fix outside the prompt.**
+- **Truncated passages.** Some stored referencing paragraphs stop mid-sentence (FAA-H-8083-25C figures 7-21 and 16-19 here, and db id 777 noted earlier). The LLM then completes them. Ingestion backlog: keep whole sentences.
+- **No-answer fallback (FR-002, UC-02 A1).** For Q046 and Q047 (no answer in the corpus) the LLM correctly returned no sentence on all 6 runs, but `generate_answer` then falls back to the extractive answer and shows the retrieved passages. FR-002 asks for a clear "no answer found" instead of a weak match. To change in `backend/answer.py`, measured separately so that this comparison only changes the prompt.
+
 ## 4. Deliberate improvement: before and after (Week 10)
