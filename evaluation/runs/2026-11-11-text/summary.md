@@ -13,6 +13,15 @@
 | all | auto (expected figure) | 42 | 0.524 | 0.786 | 0.639 |
 | all | human (scored 2) | 0 of 42 judged | n/a | n/a | n/a |
 
+By question type (auto rule):
+
+| Scope | Type | Questions | Hit@1 | Hit@5 | MRR@5 |
+| --- | --- | --- | --- | --- | --- |
+| own | topic | 30 | 0.733 | 0.933 | 0.819 |
+| own | symptom | 12 | 0.417 | 0.583 | 0.472 |
+| all | topic | 30 | 0.600 | 0.900 | 0.736 |
+| all | symptom | 12 | 0.333 | 0.500 | 0.396 |
+
 | Scope | No-answer accuracy | Answerable questions refused by the threshold |
 | --- | --- | --- |
 | own | 7/8 | 3/42: Q018, Q026, Q031 |
