@@ -324,4 +324,47 @@ Symptom questions are clearly the weakest case: this is the first candidate for 
 - **Truncated passages.** Some stored referencing paragraphs stop mid-sentence (FAA-H-8083-25C figures 7-21 and 16-19 here, and db id 777 noted earlier). The LLM then completes them. Ingestion backlog: keep whole sentences.
 - **No-answer fallback (FR-002, UC-02 A1).** For Q046 and Q047 (no answer in the corpus) the LLM correctly returned no sentence on all 6 runs, but `generate_answer` then falls back to the extractive answer and shows the retrieved passages. FR-002 asks for a clear "no answer found" instead of a weak match. To change in `backend/answer.py`, measured separately so that this comparison only changes the prompt.
 
+### 3.7 Joint retrieval over text and images (P7-30)
+
+**Requirement.** Brief section 4: "joint retrieval over text and images"; SRS UC-02 step 3: "the system searches the stored text and figures together". Neither document says how. The modes below are the team's choices, measured on the same 50 questions as 3.5 (code: branch `feature/P7-30-joint-retrieval`, `backend/retrieval.py`, `RETRIEVAL_MODE`).
+
+| Mode | What is compared with the question |
+| --- | --- |
+| `text` (3.5, unchanged) | the figure document: section heading + caption + citing paragraphs (bge-small, 384 dims) |
+| `image` | the figure **picture**: CLIP `clip-ViT-B-32` (sentence-transformers, 512 dims) on the PNG, `ingestion/embed_images.py`, table `figure_image_embeddings` (migration 006) |
+| `joint` | `text` and `image` rankings fused with Reciprocal Rank Fusion, score = sum of 1/(60 + rank) (Cormack, Clarke and Buettcher, SIGIR 2009; k = 60 not tuned), 50 candidates per list |
+| `passages` | the 100 handbook chunks nearest to the question; a chunk that mentions "Figure 3-3" gives its score to figure 3-3 (`figure_mentions`; 388/388 mentions in 15B and 542/543 in 25C match a stored figure) |
+| `hybrid` | `text` and `passages` rankings fused with RRF |
+
+In every mode the "no answer" decision and the confidence use the text similarity of the best `text` match (threshold 0.65, low confidence 0.70), so no-answer handling is the same in all modes. Image and chunk searches read only `searchable_*` views (BR-001); tests check this.
+
+**Commands.** `python ingestion/embed_images.py` (849 of 849 figures embedded, no missing image), then `python evaluation/run_eval.py run 2026-11-11-<mode> <mode>` for the five modes. Outputs: `evaluation/runs/2026-11-11-{text,image,joint,passages,hybrid}/`. The `text` run reproduces 3.5 exactly (0.643 / 0.833 / 0.720): the new code did not change the existing search.
+
+**Results (automatic rule: the expected figure; 42 answerable questions).**
+
+| Mode | own Hit@1 | own Hit@5 | own MRR@5 | all Hit@1 | all Hit@5 | all MRR@5 |
+| --- | --- | --- | --- | --- | --- | --- |
+| text | **0.643** | 0.833 | **0.720** | **0.524** | **0.786** | **0.639** |
+| image (CLIP) | 0.071 | 0.190 | 0.115 | 0.048 | 0.143 | 0.080 |
+| joint (text + CLIP) | 0.167 | 0.381 | 0.260 | 0.167 | 0.381 | 0.238 |
+| passages | 0.571 | **0.857** | 0.683 | 0.405 | 0.786 | 0.569 |
+| hybrid (text + passages) | 0.595 | 0.833 | 0.698 | 0.476 | 0.762 | 0.611 |
+
+By question type (own scope, Hit@1 / Hit@5 / MRR@5):
+
+| Type | text | passages | hybrid |
+| --- | --- | --- | --- |
+| topic (30) | 0.733 / 0.933 / 0.819 | 0.633 / 0.967 / 0.772 | 0.667 / 0.933 / 0.786 |
+| symptom (12) | 0.417 / 0.583 / 0.472 | 0.417 / 0.583 / 0.461 | 0.417 / 0.583 / 0.479 |
+
+No-answer accuracy is 7/8 (own) and 6/8 (all) in every mode, as expected from the shared threshold.
+
+**Reading.**
+- **The picture alone does not find the figure.** CLIP puts the expected figure in the top 5 for 8 of 42 questions. It was trained on photographs with everyday captions; our figures are technical line drawings full of labels. Example Q001 (airspace classes): text ranks figure 1-1 first; CLIP returns 4-10, 4-11, 4-5, 5-15, 4-4. Fusing such a list with the text list (`joint`) pulls good text results down: Hit@1 falls from 0.643 to 0.167.
+- **Passages help slightly at rank 5, not at rank 1.** `passages` finds one more expected figure in the top 5 (36 vs 35 of 42) but ranks fewer first. `hybrid` is better on 4 questions and worse on 5 compared with `text`. With 42 questions, these differences are within noise.
+- **No mode helps the symptom questions** (same 5/12 at rank 1 and 7/12 in the top 5). Their problem is analysed in section 4.
+- These numbers use the automatic rule only. A mode can return another figure that a person would judge equally correct (for example Q002: 3-4 instead of 3-3). The human judgements (SPEC 5.3) may change the differences above; the runs are kept so they can be re-scored with `run_eval.py score`.
+
+**Decision.** The live search stays in `text` mode (the default of `RETRIEVAL_MODE`); CLIP is not loaded in that mode, so it costs no memory on the server. The other modes stay in the code, switchable and measured, as evidence. **TO CONFIRM WITH SUPERVISOR:** whether retrieving figures through their caption, citing paragraphs and handbook passages, with the picture-based (CLIP) experiment reported as a measured negative result, satisfies "joint retrieval over text and images".
+
 ## 4. Deliberate improvement: before and after (Week 10)
