@@ -10,6 +10,11 @@ export default defineConfig({
     proxy: {
       "/search": backend,
       "/figures": backend,
+      "/answer": backend,
+      "/login": backend,
+      "/logout": backend,
+      "/me": backend,
+      "/admin": backend,
     },
   },
   build: {

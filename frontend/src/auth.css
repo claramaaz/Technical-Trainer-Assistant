@@ -1,0 +1,66 @@
+/* Login page and session bar (P7-35). Kept apart from styles.css so the search page
+   styles (P7-34) and these do not touch the same lines. */
+.auth-loading { text-align: center; color: #555; margin-top: 40px; font-family: system-ui, sans-serif; }
+
+.login-page { max-width: 380px; margin: 0 auto; padding: 32px 16px; }
+.login-page h1 { font-size: 1.4rem; margin: 0; }
+.login-subtitle { color: #555; margin: 4px 0 20px; }
+.login-form { display: flex; flex-direction: column; gap: 14px; }
+.login-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 14px; }
+.login-form input {
+  font-size: 16px; /* no zoom on iOS */
+  padding: 12px;
+  border: 1px solid #c8ccd2;
+  border-radius: 8px;
+  font-weight: 400;
+}
+.login-form button {
+  font-size: 16px;
+  padding: 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #1f4e8c;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.login-form button:disabled { opacity: 0.6; cursor: default; }
+.login-error { color: #b00020; margin: 0; }
+.login-notice {
+  background: #fff4d6;
+  border: 1px solid #c98a00;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #5c3d00;
+}
+
+.session-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 8px 16px 0;
+  font-size: 14px;
+  color: #555;
+}
+.session-user { overflow-wrap: anywhere; }
+.role-badge {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12px;
+  background: #e8eef7;
+  color: #1f4e8c;
+}
+.role-admin { background: #fde7e9; color: #8a1020; }
+.logout {
+  font-size: 14px;
+  padding: 6px 12px;
+  border: 1px solid #c8ccd2;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}

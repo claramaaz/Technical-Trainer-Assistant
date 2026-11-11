@@ -8,3 +8,5 @@ httpx>=0.27
 psycopg[binary]>=3.2
 pgvector>=0.3
 pillow>=10   # figure thumbnails (ingestion/make_thumbnails.py, NFR-001)
+PyJWT>=2.8      # login tokens (backend/auth.py, P7-35)
+bcrypt>=4.1     # password hashes (backend/auth.py, P7-35)

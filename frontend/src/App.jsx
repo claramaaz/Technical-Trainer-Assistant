@@ -6,7 +6,7 @@ const NO_ANSWER = "No adequate answer found in the handbook";
 const LOW_CONFIDENCE =
   "This answer may not match your question well. Check the source before relying on it.";
 
-export default function App() {
+export default function App({ onSessionExpired }) {
   const [query, setQuery] = useState("");
   // status: idle | empty | loading | error | no-answer | results
   const [status, setStatus] = useState("idle");
@@ -35,6 +35,10 @@ export default function App() {
       const response = await fetch(`/search?q=${encodeURIComponent(q)}&k=5`, {
         signal: controller.signal,
       });
+      if (response.status === 401) {
+        onSessionExpired?.(); // token expired or logged out elsewhere (P7-35)
+        return;
+      }
       if (!response.ok) throw new Error(`The server answered with an error (${response.status}).`);
       const data = await response.json();
       if (data.reason === "no_adequate_answer" || !data.results?.length) {

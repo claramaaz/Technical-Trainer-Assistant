@@ -1,10 +1,11 @@
-"""FastAPI app: GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
+"""FastAPI app: POST /login, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
 GET /figures/{id}/page-image, GET /health,
 and the React page at /
 (the built files in frontend/dist; create them with: cd frontend && npm run build).
 
 Run from the repository root:   python -m uvicorn backend.app:app
-No login yet. Every question to /search and /answer is written to query_log (FR-007, backend/query_log.py).
+Login (P7-35, backend/auth.py): every route except /health, /login, /logout and the page itself
+needs a logged-in user (401 otherwise); /admin/* also needs the Admin role (403 otherwise). Every question to /search and /answer is written to query_log (FR-007, backend/query_log.py).
 At start-up, warm_up() loads the embedding model and the figure index, so the first learner after a
 (re)start does not wait for them (NFR-001; the query log showed 30.6 s for the first question without it).
 """
@@ -13,11 +14,12 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
-from backend import retrieval
+from backend import auth, retrieval
 from backend.answer import generate_answer
 from backend.query_log import elapsed_ms, log_query
 from backend.retrieval import image_path_for, page_image_path_for, retrieve, thumbnail_path_for
@@ -63,7 +65,45 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/search")
+class LoginBody(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=200)
+
+
+@app.post("/login")
+def login(body: LoginBody, response: Response):
+    user = auth.authenticate(body.email, body.password)
+    if user is None:
+        # UC-05 A1: one generic message, so it does not say whether the email exists.
+        raise HTTPException(status_code=401, detail="Wrong email or password")
+    token = auth.make_token(user)
+    response.set_cookie(auth.COOKIE_NAME, token, max_age=auth.TOKEN_MINUTES * 60, httponly=True,
+                        samesite="strict", secure=auth.cookie_secure(), path="/")
+    # The token is also returned for scripts and API clients (Authorization: Bearer).
+    # The React page does not store it: it relies on the httpOnly cookie.
+    return {"email": user["email"], "role": user["role"], "access_token": token, "token_type": "bearer"}
+
+
+@app.post("/logout")
+def logout(response: Response):
+    response.delete_cookie(auth.COOKIE_NAME, path="/", samesite="strict", secure=auth.cookie_secure(),
+                           httponly=True)
+    return {"status": "logged out"}
+
+
+@app.get("/me")
+def me(user=Depends(auth.current_user)):
+    return {"email": user["email"], "role": user["role"]}
+
+
+@app.get("/admin/ping")
+def admin_ping(user=Depends(auth.require_admin)):
+    # Placeholder admin route proving the server-side role check (BR-003) until the admin
+    # screens exist (week 5+). A Learner gets 403 here.
+    return {"status": "ok", "role": user["role"]}
+
+
+@app.get("/search", dependencies=[Depends(auth.current_user)])
 def search(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, ge=1, le=20)):
     if not q.strip():
         raise HTTPException(status_code=422, detail="q must not be blank")
@@ -77,7 +117,7 @@ def search(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, 
     return found
 
 
-@app.get("/answer")
+@app.get("/answer", dependencies=[Depends(auth.current_user)])
 def answer(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, ge=1, le=20)):
     if not q.strip():
         raise HTTPException(status_code=422, detail="q must not be blank")
@@ -95,7 +135,7 @@ def answer(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, 
     return body
 
 
-@app.get("/figures/{figure_id}/image")
+@app.get("/figures/{figure_id}/image", dependencies=[Depends(auth.current_user)])
 def figure_image(figure_id: str):
     # figure_id is the DATABASE id. The file path comes from the index, never from the URL.
     path = image_path_for(figure_id)
@@ -104,7 +144,7 @@ def figure_image(figure_id: str):
     return FileResponse(path, media_type="image/png")
 
 
-@app.get("/figures/{figure_id}/thumbnail")
+@app.get("/figures/{figure_id}/thumbnail", dependencies=[Depends(auth.current_user)])
 def figure_thumbnail(figure_id: str):
     # NFR-001: the compressed thumbnail shown first. DATABASE id, path from the index.
     path = thumbnail_path_for(figure_id)
@@ -113,7 +153,7 @@ def figure_thumbnail(figure_id: str):
     return FileResponse(path, media_type="image/webp")
 
 
-@app.get("/figures/{figure_id}/page-image")
+@app.get("/figures/{figure_id}/page-image", dependencies=[Depends(auth.current_user)])
 def figure_page_image(figure_id: str):
     # UC-07: the stored image of the handbook page the figure is on. DATABASE id, path from the index.
     path = page_image_path_for(figure_id)
