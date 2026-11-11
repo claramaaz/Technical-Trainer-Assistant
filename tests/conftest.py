@@ -25,6 +25,32 @@ def text_mode_unless_a_test_chooses(monkeypatch):
     monkeypatch.setenv("RETRIEVAL_MODE", "text")
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "real_auth: use the real login checks (tests/test_auth.py)")
+
+
+@pytest.fixture(autouse=True)
+def test_jwt_secret(monkeypatch):
+    """Tokens in tests are signed with a fixed test key, never the developer's JWT_SECRET (P7-35)."""
+    monkeypatch.setenv("JWT_SECRET", "test-secret-only-for-pytest-0123456789abcdef")
+
+
+@pytest.fixture(autouse=True)
+def logged_in_as_learner(request):
+    """Since P7-35 every API route except /health needs a logged-in user. The API tests written
+    before it test retrieval, not login, so they run as a logged-in Learner: FastAPI's
+    dependency_overrides replaces the login check for the duration of the test.
+    Tests marked real_auth (tests/test_auth.py) get the real check instead."""
+    if request.node.get_closest_marker("real_auth"):
+        yield
+        return
+    from backend import auth
+    from backend.app import app
+    app.dependency_overrides[auth.current_user] = lambda: {"id": 0, "email": "test@learner", "role": "learner"}
+    yield
+    app.dependency_overrides.pop(auth.current_user, None)
+
+
 @pytest.fixture(autouse=True)
 def no_query_log_in_real_database(monkeypatch):
     """Tests must not write test questions into the real query_log (P7-28). tests/test_query_log.py
