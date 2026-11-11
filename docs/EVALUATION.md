@@ -324,4 +324,84 @@ Symptom questions are clearly the weakest case: this is the first candidate for 
 - **Truncated passages.** Some stored referencing paragraphs stop mid-sentence (FAA-H-8083-25C figures 7-21 and 16-19 here, and db id 777 noted earlier). The LLM then completes them. Ingestion backlog: keep whole sentences.
 - **No-answer fallback (FR-002, UC-02 A1).** For Q046 and Q047 (no answer in the corpus) the LLM correctly returned no sentence on all 6 runs, but `generate_answer` then falls back to the extractive answer and shows the retrieved passages. FR-002 asks for a clear "no answer found" instead of a weak match. To change in `backend/answer.py`, measured separately so that this comparison only changes the prompt.
 
+### 3.7 Joint retrieval over text and images (P7-30)
+
+**Requirement.** Brief section 4: "joint retrieval over text and images"; SRS UC-02 step 3: "the system searches the stored text and figures together". Neither document says how. The modes below are the team's choices, measured on the same 50 questions as 3.5 (code: branch `feature/P7-30-joint-retrieval`, `backend/retrieval.py`, `RETRIEVAL_MODE`).
+
+| Mode | What is compared with the question |
+| --- | --- |
+| `text` (3.5, unchanged) | the figure document: section heading + caption + citing paragraphs (bge-small, 384 dims) |
+| `image` | the figure **picture**: CLIP `clip-ViT-B-32` (sentence-transformers, 512 dims) on the PNG, `ingestion/embed_images.py`, table `figure_image_embeddings` (migration 006) |
+| `joint` | `text` and `image` rankings fused with Reciprocal Rank Fusion, score = sum of 1/(60 + rank) (Cormack, Clarke and Buettcher, SIGIR 2009; k = 60 not tuned), 50 candidates per list |
+| `passages` | the 100 handbook chunks nearest to the question; a chunk that mentions "Figure 3-3" gives its score to figure 3-3 (`figure_mentions`; 388/388 mentions in 15B and 542/543 in 25C match a stored figure) |
+| `hybrid` | `text` and `passages` rankings fused with RRF |
+
+In every mode the "no answer" decision and the confidence use the text similarity of the best `text` match (threshold 0.65, low confidence 0.70), so no-answer handling is the same in all modes. Image and chunk searches read only `searchable_*` views (BR-001); tests check this.
+
+**Commands.** `python ingestion/embed_images.py` (849 of 849 figures embedded, no missing image), then `python evaluation/run_eval.py run 2026-11-11-<mode> <mode>` for the five modes. Outputs: `evaluation/runs/2026-11-11-{text,image,joint,passages,hybrid}/`. The `text` run reproduces 3.5 exactly (0.643 / 0.833 / 0.720): the new code did not change the existing search.
+
+**Results (automatic rule: the expected figure; 42 answerable questions).**
+
+| Mode | own Hit@1 | own Hit@5 | own MRR@5 | all Hit@1 | all Hit@5 | all MRR@5 |
+| --- | --- | --- | --- | --- | --- | --- |
+| text | **0.643** | 0.833 | **0.720** | **0.524** | **0.786** | **0.639** |
+| image (CLIP) | 0.071 | 0.190 | 0.115 | 0.048 | 0.143 | 0.080 |
+| joint (text + CLIP) | 0.167 | 0.381 | 0.260 | 0.167 | 0.381 | 0.238 |
+| passages | 0.571 | **0.857** | 0.683 | 0.405 | 0.786 | 0.569 |
+| hybrid (text + passages) | 0.595 | 0.833 | 0.698 | 0.476 | 0.762 | 0.611 |
+
+By question type (own scope, Hit@1 / Hit@5 / MRR@5):
+
+| Type | text | passages | hybrid |
+| --- | --- | --- | --- |
+| topic (30) | 0.733 / 0.933 / 0.819 | 0.633 / 0.967 / 0.772 | 0.667 / 0.933 / 0.786 |
+| symptom (12) | 0.417 / 0.583 / 0.472 | 0.417 / 0.583 / 0.461 | 0.417 / 0.583 / 0.479 |
+
+No-answer accuracy is 7/8 (own) and 6/8 (all) in every mode, as expected from the shared threshold.
+
+**Reading.**
+- **The picture alone does not find the figure.** CLIP puts the expected figure in the top 5 for 8 of 42 questions. It was trained on photographs with everyday captions; our figures are technical line drawings full of labels. Example Q001 (airspace classes): text ranks figure 1-1 first; CLIP returns 4-10, 4-11, 4-5, 5-15, 4-4. Fusing such a list with the text list (`joint`) pulls good text results down: Hit@1 falls from 0.643 to 0.167.
+- **Passages help slightly at rank 5, not at rank 1.** `passages` finds one more expected figure in the top 5 (36 vs 35 of 42) but ranks fewer first. `hybrid` is better on 4 questions and worse on 5 compared with `text`. With 42 questions, these differences are within noise.
+- **No mode helps the symptom questions** (same 5/12 at rank 1 and 7/12 in the top 5). Their problem is analysed in section 4.
+- These numbers use the automatic rule only. A mode can return another figure that a person would judge equally correct (for example Q002: 3-4 instead of 3-3). The human judgements (SPEC 5.3) may change the differences above; the runs are kept so they can be re-scored with `run_eval.py score`.
+
+**Decision.** The live search stays in `text` mode (the default of `RETRIEVAL_MODE`); CLIP is not loaded in that mode, so it costs no memory on the server. The other modes stay in the code, switchable and measured, as evidence. **TO CONFIRM WITH SUPERVISOR:** whether retrieving figures through their caption, citing paragraphs and handbook passages, with the picture-based (CLIP) experiment reported as a measured negative result, satisfies "joint retrieval over text and images".
+
 ## 4. Deliberate improvement: before and after (Week 10)
+
+### 4.1 Experiment 1: query reformulation (P7-33)
+
+**Why this experiment.** Section 3.5 shows that symptom questions are the weak case (own scope: Hit@1 5/12, Hit@5 7/12). In the text run, every symptom question that fails describes an effect without naming it (Q020 pitot blockage, Q031 microburst, Q032 ground effect, Q033 adverse yaw, Q034 P-factor), while the ones that succeed share words with the handbook. None of the retrieval modes of 3.7 helped them.
+
+**Hypothesis (written before the run).** Rewriting the question in handbook vocabulary with the LLM, then fusing the ranking of the rewritten question with the ranking of the original one, raises Hit@5 on the symptom questions without lowering the topic questions or the no-answer accuracy.
+
+**Method.**
+- `backend/reformulate.py`: one Groq call per question (`openai/gpt-oss-120b`, temperature 0, JSON output). Two prompts, both committed before the run (commit `5d006e6`) and not changed after it: `reformulate_v1.txt` (strict: handbook words only, no cause, no new fact) and `reformulate_v2.txt` (the same, plus up to 3 handbook topics given as search terms, never as the cause). A test checks that the prompts contain none of the 50 questions and none of the expected answers of the symptom questions.
+- Mode `reformulated` in `backend/retrieval.py`: the original question and the rewritten one are each ranked (50 candidates), and the two lists are fused with RRF (k = 60, as in 3.7). If the rewrite fails, the original question alone is used.
+- The "no answer" decision and the confidence still use the score of the **original** question, so a rewrite can reorder figures but cannot turn a question without an answer into an answered one. A test checks this.
+- Commands: `python evaluation/run_eval.py run 2026-11-11-reform-v1 reformulated v1` and `... reform-v2 reformulated v2`, same 50 questions. The rewrites are in `evaluation/runs/2026-11-11-reform-v*/reformulations.csv`.
+
+**Results (automatic rule, own scope; baseline = `2026-11-11-text`, identical to 3.5).**
+
+| Questions | Baseline (text) | Rewrite v1 (strict) | Rewrite v2 (topics) |
+| --- | --- | --- | --- |
+| all 42 answerable: Hit@1 / Hit@5 / MRR@5 | 0.643 / 0.833 / 0.720 | 0.619 / 0.833 / 0.695 | 0.619 / 0.810 / 0.688 |
+| topic (30) | 0.733 / 0.933 / 0.819 | 0.700 / 0.900 / 0.775 | 0.733 / 0.900 / 0.806 |
+| symptom (12) | 0.417 / 0.583 / 0.472 | 0.417 / 0.667 / 0.496 | 0.333 / 0.583 / 0.394 |
+| no-answer accuracy | 7/8 | 7/8 | 7/8 |
+
+All scope (both handbooks), all 42 answerable: baseline 0.524 / 0.786 / 0.639; v1 0.476 / 0.762 / 0.591; v2 0.524 / 0.714 / 0.604.
+
+Questions that moved (own rank of the expected figure, baseline -> rewrite):
+- v1: better Q011 (4->3), Q026 (3->2), Q033 (not in top 5 -> 4); worse Q012 (2 -> not in top 5), Q015 (3->4), Q016 (2->3), Q030 (3->5), Q039 (1->3).
+- v2: better Q011 (4->2), Q015 (3->2), Q016 (2->1), Q033 (- ->5), Q040 (2->1); worse Q012 (2->-), Q017 (1->3), Q026 (3->5), Q028 (1->3), Q030 (3->-), Q039 (1->3).
+
+**Cost.** 50 LLM calls per run, no failure and no retry (6 s pause between calls). Median time of a rewrite: 814 ms (v1), 1199 ms (v2). In the live search this would add about one second to every answered question (the LLM is not called when the original question is refused).
+
+**Reading.**
+- **The hypothesis is not confirmed.** v1 gains one symptom question in the top 5 (Q033) and loses topic questions; v2 is worse on symptoms. With 12 symptom questions, one question is 8 points: these differences are within noise.
+- **Naming the phenomenon was not enough.** v2 named the right topic for Q031 ("microburst"), Q032 ("ground effect") and Q033 ("Adverse Yaw"), and still the expected figure was not ranked first. Two likely reasons, not yet verified: (1) RRF gives the same weight to the original list, which does not contain the expected figure, so a figure found only by the rewrite falls behind figures found by both; (2) the stored text of the expected figure is weak: the citing paragraphs of 12-17 and 5-17 start in the middle of a sentence (the truncation found in 3.6), so the sentence that names the phenomenon is not in the searched text.
+- **The strict prompt was not always followed.** The v1 rewrite of Q033 says "adverse yaw", which is the answer: the rule "do not name a cause" was broken. A person must still check every rewrite (`check` column of `reformulations.csv`: faithful / cause_added / intent_changed) before these runs are used further.
+- No-answer accuracy is unchanged, as designed.
+
+**Decision.** Query reformulation is **not** adopted: the live search stays in `text` mode and calls no LLM before retrieval. The result is reported as measured (SRS UC-06 A2). The next candidate for the deliberate improvement targets the cause found here, the stored text of the figures (whole citing sentences at ingestion), measured on the same 50 questions. **TO CONFIRM WITH SUPERVISOR:** whether a measured negative result can count as the deliberate improvement, or whether a second, positive attempt is expected; and whether an LLM may be used before retrieval at all.

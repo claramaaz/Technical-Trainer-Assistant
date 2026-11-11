@@ -12,7 +12,23 @@ fallback any more.
 
 Connection: POSTGRES_* variables from the environment or .env, host 127.0.0.1 (the
 same code as ingestion/migrate.py and the loader).
+
+Joint text + image retrieval (P7-30, brief section 4). RETRIEVAL_MODE (environment or .env) chooses
+how the figures are ranked:
+    text  = the text search above (bge-small on caption + citing paragraph). Default.
+    image = CLIP: the question is compared with the figure IMAGE (ingestion/embed_images.py).
+    joint = both lists fused with Reciprocal Rank Fusion (fuse_rrf()).
+    passages = figures found through the PASSAGES of the handbook (chunks): the question is compared
+               with every chunk, and a chunk that mentions "Figure 3-3" gives its score to figure 3-3.
+    hybrid   = the text list and the passages list fused with RRF (SRS UC-02 step 3: the system
+               searches the stored text and figures together).
+    reformulated = P7-33 experiment: the text list of the ORIGINAL question and the text list of the
+               question rewritten by the LLM in handbook words (backend/reformulate.py), fused with
+               RRF. If the rewrite fails, the original question alone is used (same as "text").
+In every mode the "no answer" decision and the confidence use the TEXT similarity of the best text
+match, the score the thresholds were set on: the image score of CLIP is on another scale.
 """
+import os
 import sys
 from dataclasses import dataclass
 from functools import lru_cache
@@ -27,9 +43,25 @@ sys.path.insert(0, str(ROOT / "ingestion"))
 # Reused, not copied: the query prefix is the one that was evaluated, and the
 # connection settings are the ones the loader uses.
 from baseline_retrieval import QUERY_PREFIX, load_model  # noqa: E402
-from migrate import connection_string  # noqa: E402
+from migrate import connection_string, read_env_file  # noqa: E402
 
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
+
+# P7-30. Same name as ingestion/embed_images.py: the question and the images must use one model.
+IMAGE_MODEL_NAME = "clip-ViT-B-32"
+MODES = ("text", "image", "joint", "passages", "hybrid", "reformulated")
+DEFAULT_MODE = "text"
+# Reciprocal Rank Fusion: score = sum over the lists of 1 / (RRF_K + rank). 60 is the value of the
+# paper that introduced it (Cormack, Clarke and Buettcher, SIGIR 2009); not tuned on our questions.
+RRF_K = 60
+# How many figures each list gives to the fusion. A figure ranked 6th by text and 1st by image
+# must still be able to reach the top 5, so the lists are longer than k.
+CANDIDATES = 50
+# How many chunks (passages) are read to build the passages list. Several chunks can cite the same
+# figure, so the list of figures is shorter than this.
+CHUNK_CANDIDATES = 100
+# CLIP reads at most 77 tokens; a longer question would raise an error. Questions are short.
+CLIP_MAX_WORDS = 50
 
 # PROVISIONAL. Chosen by looking at the scores of the same 23 answerable questions
 # and 2 no-answer questions (Q001-Q025) that it is then tested on, so it is NOT
@@ -73,6 +105,32 @@ RANK_SQL = """
     WHERE %(handbooks)s::text[] IS NULL OR document_id = ANY(%(handbooks)s::text[])
     ORDER BY embedding <=> %(q)s, id
     LIMIT %(k)s"""
+
+# Same as RANK_SQL, on the CLIP image vectors (P7-30). Reads the view, never the table (BR-001).
+IMAGE_RANK_SQL = """
+    SELECT id, 1 - (embedding <=> %(q)s) AS score
+    FROM searchable_figure_images
+    WHERE model = %(model)s
+      AND (%(handbooks)s::text[] IS NULL OR document_id = ANY(%(handbooks)s::text[]))
+    ORDER BY embedding <=> %(q)s, id
+    LIMIT %(k)s"""
+
+# The chunks nearest to the question that cite at least one figure (P7-30). Reads the view (BR-001).
+# The question vector is the bge one, with the same query prefix: chunks were embedded with bge-small.
+CHUNK_RANK_SQL = """
+    SELECT document_id, figure_mentions, 1 - (embedding <=> %(q)s) AS score
+    FROM searchable_chunks
+    WHERE cardinality(figure_mentions) > 0
+      AND (%(handbooks)s::text[] IS NULL OR document_id = ANY(%(handbooks)s::text[]))
+    ORDER BY embedding <=> %(q)s, id
+    LIMIT %(k)s"""
+
+# Text similarity of given figures: a figure brought in by the image list only still needs its
+# text score for the threshold and for display.
+TEXT_SCORE_SQL = """
+    SELECT id, 1 - (embedding <=> %(q)s) AS score
+    FROM searchable_figures
+    WHERE id = ANY(%(ids)s::bigint[])"""
 
 
 def connect(dsn):
@@ -127,6 +185,27 @@ def embed_query(query):
     return _model().encode([QUERY_PREFIX + query], normalize_embeddings=True)[0]
 
 
+def retrieval_mode(environ=None, env_file=None):
+    """RETRIEVAL_MODE from the environment, else .env, else "text". An unknown value stops."""
+    environ = os.environ if environ is None else environ
+    mode = environ.get("RETRIEVAL_MODE") or read_env_file(env_file or ROOT / ".env").get("RETRIEVAL_MODE")
+    mode = (mode or DEFAULT_MODE).strip().lower()
+    if mode not in MODES:
+        raise ValueError(f"RETRIEVAL_MODE must be one of {MODES}, got {mode!r}")
+    return mode
+
+
+@lru_cache(maxsize=1)
+def _image_model():
+    return load_model(IMAGE_MODEL_NAME)
+
+
+def embed_image_query(query):
+    """The question as a CLIP vector (comparable with the figure images)."""
+    words = query.split()[:CLIP_MAX_WORDS]
+    return _image_model().encode([" ".join(words)], normalize_embeddings=True)[0]
+
+
 def rank(index, query_vector, k, handbooks=None):
     """(figure id, score) of the k best searchable figures, best first. Done by the database.
 
@@ -137,7 +216,100 @@ def rank(index, query_vector, k, handbooks=None):
     return [(int(fid), float(score)) for fid, score in rows]
 
 
-def retrieve(query, k=5, index=None, query_vector=None, handbooks=None):
+def rank_image(index, image_query_vector, k, handbooks=None):
+    """(figure id, CLIP score) of the k figures whose IMAGE is nearest to the question, best first.
+
+    Stops with a clear message when no image embedding exists: a silent empty list would make the
+    joint mode quietly equal to the text mode and spoil an evaluation run."""
+    handbooks = list(handbooks) if handbooks is not None else None
+    with connect(index.dsn) as conn:
+        rows = conn.execute(IMAGE_RANK_SQL, {"q": image_query_vector, "k": k, "handbooks": handbooks,
+                                             "model": IMAGE_MODEL_NAME}).fetchall()
+    if not rows:
+        raise RuntimeError("no image embedding in the database: run python ingestion/embed_images.py")
+    return [(int(fid), float(score)) for fid, score in rows]
+
+
+def figures_from_chunks(chunk_rows, index):
+    """[(figure id, score)] from chunks, best first. chunk_rows = (handbook id, figure numbers, score).
+
+    A figure takes the score of the BEST chunk that cites it. A mention that is not a stored figure
+    of that handbook is ignored (it cannot be shown). Ties: smaller figure id first."""
+    lookup = {(d["handbook_id"], d["figure_number"]): fid for fid, d in index.documents.items()}
+    best = {}
+    for handbook_id, mentions, score in chunk_rows:
+        for number in mentions:
+            fid = lookup.get((handbook_id, number))
+            if fid is not None and score > best.get(fid, float("-inf")):
+                best[fid] = score
+    return sorted(best.items(), key=lambda item: (-item[1], item[0]))
+
+
+def rank_chunks(index, query_vector, k, handbooks=None):
+    """The figures cited by the k chunks nearest to the question: [(figure id, chunk score)]."""
+    handbooks = list(handbooks) if handbooks is not None else None
+    with connect(index.dsn) as conn:
+        rows = conn.execute(CHUNK_RANK_SQL, {"q": query_vector, "k": k, "handbooks": handbooks}).fetchall()
+    return figures_from_chunks(rows, index)
+
+
+def text_scores(index, query_vector, ids):
+    """{figure id: text similarity} for the given ids."""
+    if not ids:
+        return {}
+    with connect(index.dsn) as conn:
+        rows = conn.execute(TEXT_SCORE_SQL, {"q": query_vector, "ids": list(ids)}).fetchall()
+    return {int(fid): float(score) for fid, score in rows}
+
+
+def fuse_rrf(ranked_lists, k, rrf_k=RRF_K):
+    """Reciprocal Rank Fusion of several rankings: [(figure id, fused score)], best first, k of them.
+
+    Only the RANKS are used, never the scores, so a text cosine and a CLIP cosine (different scales)
+    can be combined. A figure in both lists adds both terms. Ties: smaller figure id first."""
+    fused = {}
+    for ranked in ranked_lists:
+        for position, (fid, _score) in enumerate(ranked, start=1):
+            fused[fid] = fused.get(fid, 0.0) + 1.0 / (rrf_k + position)
+    return sorted(fused.items(), key=lambda item: (-item[1], item[0]))[:k]
+
+
+def rank_query(index, query, query_vector, k, handbooks=None, mode=None, reformulated=None):
+    """The ranking used by retrieve() and by the evaluation, for the chosen mode.
+
+    Returns (ranked, best_text_score): ranked = [(figure id, TEXT similarity)] in the order of the
+    mode; best_text_score = the text similarity of the best TEXT match (for the threshold).
+    query_vector is the bge vector of the question (the evaluation computes it once).
+    reformulated: the rewritten question ("reformulated" mode only); None = use the original only."""
+    mode = mode or retrieval_mode()
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
+    if mode == "text":
+        ranked = rank(index, query_vector, k, handbooks)
+        return ranked, (ranked[0][1] if ranked else None)
+    text_ranked = rank(index, query_vector, CANDIDATES, handbooks)
+    best_text = text_ranked[0][1] if text_ranked else None
+    if mode == "reformulated":
+        if not reformulated:
+            return text_ranked[:k], best_text
+        # best_text stays the one of the ORIGINAL question: a rewrite can reorder the figures,
+        # it can never turn a question without an answer into an answered one.
+        rewritten = rank(index, embed_query(reformulated), CANDIDATES, handbooks)
+        order = fuse_rrf([text_ranked, rewritten], k)
+    elif mode in ("image", "joint"):
+        image_ranked = rank_image(index, embed_image_query(query), CANDIDATES if mode == "joint" else k,
+                                  handbooks)
+        order = (fuse_rrf([text_ranked, image_ranked], k) if mode == "joint" else image_ranked[:k])
+    else:
+        passage_ranked = rank_chunks(index, query_vector, CHUNK_CANDIDATES, handbooks)
+        order = (fuse_rrf([text_ranked, passage_ranked], k) if mode == "hybrid" else passage_ranked[:k])
+    known = dict(text_ranked)
+    missing = [fid for fid, _ in order if fid not in known]
+    known.update(text_scores(index, query_vector, missing))
+    return [(fid, known[fid]) for fid, _ in order if fid in known], best_text
+
+
+def retrieve(query, k=5, index=None, query_vector=None, handbooks=None, mode=None, reformulated=None):
     """Top-k figures for a question, or {"results": [], "reason": "no_adequate_answer"}.
 
     When figures are returned, "confidence" is "high", or "low" when the best score is below
@@ -147,12 +319,20 @@ def retrieve(query, k=5, index=None, query_vector=None, handbooks=None):
     threshold is applied to the best score inside that selection.
 
     index and query_vector can be passed in (tests do); by default they are loaded.
+    mode: "text", "image", "joint", "passages", "hybrid" or "reformulated"; None = RETRIEVAL_MODE.
+    reformulated: the rewritten question for the "reformulated" mode (the evaluation passes it).
+    When it is None in that mode, the LLM is asked here, but only if the ORIGINAL question passes
+    the threshold: a question refused anyway costs no LLM call. "score" is always the text
+    similarity, and the threshold is applied to the best TEXT match in every mode.
     """
     index = index or load_index()
     if query_vector is None:
         query_vector = embed_query(query)
-    ranked = rank(index, query_vector, k, handbooks)
-    if not ranked or ranked[0][1] < THRESHOLD:
+    mode = mode or retrieval_mode()
+    if mode == "reformulated" and reformulated is None:
+        reformulated = _live_reformulation(index, query, query_vector, handbooks)
+    ranked, best_text = rank_query(index, query, query_vector, k, handbooks, mode, reformulated)
+    if not ranked or best_text is None or best_text < THRESHOLD:
         return {"results": [], "reason": NO_ANSWER}
     results = []
     for i, score in ranked:
@@ -174,8 +354,18 @@ def retrieve(query, k=5, index=None, query_vector=None, handbooks=None):
             "source_pdf_url": (f"{d['source_url']}#page={d['pdf_page']}"
                                if d.get("source_url") and d.get("pdf_page") else None),
         })
-    confidence = "low" if ranked[0][1] < LOW_CONFIDENCE_BELOW else "high"
+    confidence = "low" if best_text < LOW_CONFIDENCE_BELOW else "high"
     return {"results": results, "reason": None, "confidence": confidence}
+
+
+def _live_reformulation(index, query, query_vector, handbooks):
+    """The rewritten question for a live search, or None (refused anyway, or the LLM failed)."""
+    first = rank(index, query_vector, 1, handbooks)
+    if not first or first[0][1] < THRESHOLD:
+        return None
+    from backend.reformulate import reformulate   # here: backend.reformulate imports this module
+    prompt = os.environ.get("REFORMULATE_PROMPT") or read_env_file(ROOT / ".env").get("REFORMULATE_PROMPT") or "v1"
+    return reformulate(query, prompt.strip())["text"]
 
 
 def image_path_for(figure_id):

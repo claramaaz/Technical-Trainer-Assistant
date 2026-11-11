@@ -326,3 +326,29 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **Checked:** full suite 221 passed (Clara, 6 Nov). The question "four forces acting on an aircraft" returns figure 4-3 with `thumbnail_url` `/figures/55/thumbnail`; the route answers HTTP 200 with a WebP image of 7.5 KB.
 - **What we could NOT verify:** the real load time on a 3G connection (NFR-001) is not measured yet; it needs the interface to show the thumbnails first (Mia, P7-34) and a throttled-network test. The server warm-up took 28 s, then 82 s, then 90 s over three runs; we have not found out why (the PC was busy with other processes), to be re-measured on an idle machine.
 - **Commit / PR:** branch `feature/P7-49-thumbnails`
+
+### 2026-11-11 - P7-30: joint retrieval over text and images (five modes)
+- **Who:** Clara
+- **Tool:** Claude (design, code, tests), Claude Code (running the migration, the image embeddings and the evaluation runs on the local database)
+- **What we asked:** Brief section 4 asks for "joint retrieval over text and images" and SRS UC-02 step 3 for a search of "the stored text and figures together". We asked for a way to do this that can be switched on and off, so it can be measured against the 50-question baseline.
+- **What came back:** `RETRIEVAL_MODE` in `backend/retrieval.py` with five modes (text, image, joint, passages, hybrid); CLIP image embeddings (`ingestion/embed_images.py`, migration `006_figure_image_embeddings.sql`); a chunk-to-figure ranking; Reciprocal Rank Fusion; `run_eval.py` takes the mode as an argument; tests `test_joint_retrieval.py`, `test_embed_images.py`, `test_chunk_ranking_db.py`.
+- **How we checked it:** the `text` run reproduces the 3.5 baseline exactly (0.643 / 0.833 / 0.720), so the existing search was not changed. Full suite 260 passed. Results in EVALUATION.md 3.7.
+- **What was wrong, and how it was caught:**
+  - Claude proposed CLIP image embeddings as the "image" part of joint retrieval. Measured, it was the worst option: image alone Hit@1 0.071, text + image 0.167 instead of 0.643. CLIP does not understand labelled technical drawings. Kept in the code and reported as a negative result; the live search stays in `text` mode.
+  - Two of Claude's own test expectations were wrong (an RRF ordering computed by hand, and the index of the chunk that cites a figure in the test handbook). Caught by running the tests before the code was copied to the project; the tests were corrected, not the code.
+  - The tool Claude uses to write files on Clara's PC reported a file as written while the old version was still on disk (the summary header still named CLIP for the passages run). Caught by Clara's Claude Code output and by comparing the file content (grep, then md5) with Claude's copy. Since then every write is checked by md5.
+- **What we could NOT verify:** no human judgement yet, so all differences between modes use the automatic rule only. Whether this satisfies "joint retrieval over text and images" is a question for the supervisor.
+- **Commit / PR:** branch `feature/P7-30-joint-retrieval` (commits e4120d5, c41a9f4)
+
+### 2026-11-11 - P7-33: query reformulation experiment (deliberate improvement, attempt 1)
+- **Who:** Clara
+- **Tool:** Claude (diagnosis, code, tests, EVALUATION.md text), Claude Code (running the two evaluation runs; Groq for the rewrites), ChatGPT (Clara asked it to review the plan; it asked for a separate branch and a fixed prompt)
+- **What we asked:** Symptom questions are the weak case (Hit@1 5/12). We asked whether rewriting the question in handbook words before the search would help, as a controlled experiment: the hypothesis and the prompts fixed before the run, the same 50 questions, results by question type.
+- **What came back:** `backend/reformulate.py`, prompts `reformulate_v1.txt` (strict) and `reformulate_v2.txt` (with topics), mode `reformulated`, `reformulations.csv` in each run, metrics by question type in every summary, `tests/test_reformulate.py`. The prompts were committed (5d006e6) before the run.
+- **How we checked it:** full suite 283 passed. Two runs, 50 LLM calls each, no failure. Results in EVALUATION.md 4.1.
+- **What was wrong, and how it was caught:**
+  - The hypothesis did not hold: symptom Hit@5 0.583 -> 0.667 with v1 (one question) and no gain with v2; topic questions slightly worse. Not adopted.
+  - The strict prompt says "do not name a cause", but the v1 rewrite of Q033 says "adverse yaw", the answer. Found by reading `reformulations.csv`. The LLM does not always follow its rules; this is why every rewrite must be checked by a person (`check` column).
+  - While preparing the experiment, Claude found that `backend/answer.py` still loaded prompt v1 although EVALUATION.md 3.6 says v2 is kept. Fixed in its own commit (3f46231).
+- **What we could NOT verify:** the human check of the 100 rewrites is not done; the two reasons given in 4.1 for the failure (RRF weight of the original list, truncated citing paragraphs) are hypotheses.
+- **Commit / PR:** branch `feature/P7-33-query-reformulation` (commits 3f46231, 5d006e6, c81f14f)

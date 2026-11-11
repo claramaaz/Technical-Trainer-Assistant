@@ -20,6 +20,12 @@ def rank_fake_indexes_with_numpy(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def text_mode_unless_a_test_chooses(monkeypatch):
+    """Tests do not depend on RETRIEVAL_MODE in the developer's .env (P7-30): text mode by default."""
+    monkeypatch.setenv("RETRIEVAL_MODE", "text")
+
+
+@pytest.fixture(autouse=True)
 def no_query_log_in_real_database(monkeypatch):
     """Tests must not write test questions into the real query_log (P7-28). tests/test_query_log.py
     turns the log back on, pointed at the temporary database."""

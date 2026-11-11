@@ -36,6 +36,8 @@ def warm_up():
     try:
         retrieval.load_index()          # cached (lru_cache): later calls reuse it
         retrieval.embed_query("warm-up")  # loads the model (cached) and runs one encoding
+        if retrieval.retrieval_mode() != "text":
+            retrieval.embed_image_query("warm-up")  # P7-30: the CLIP model too, in image/joint mode
     except Exception as exc:
         log.warning("warm-up failed (%s): %s", type(exc).__name__, exc)
         return False
