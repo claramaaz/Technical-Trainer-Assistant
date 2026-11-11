@@ -352,3 +352,20 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
   - While preparing the experiment, Claude found that `backend/answer.py` still loaded prompt v1 although EVALUATION.md 3.6 says v2 is kept. Fixed in its own commit (3f46231).
 - **What we could NOT verify:** the human check of the 100 rewrites is not done; the two reasons given in 4.1 for the failure (RRF weight of the original list, truncated citing paragraphs) are hypotheses.
 - **Commit / PR:** branch `feature/P7-33-query-reformulation` (commits 3f46231, 5d006e6, c81f14f)
+
+
+
+### 2026-11-11 - P7-35: login with JWT, Learner/Admin roles checked on the server
+- **Who:** Mia
+- **Tool:** Claude (design, code, tests; it read the repository on Mia's PC and ran the tests in a separate copy)
+- **What we asked:** FR-004 / UC-05 / BR-003: login, two roles, checked on the server, with a test showing a 403. Clara asked for the React login in the same ticket and for pytest to stay green.
+- **What came back:** migration `007_users.sql`; `backend/auth.py` (bcrypt hashes, JWT, `current_user` -> 401, `require_admin` -> 403); `POST /login`, `POST /logout`, `GET /me`, `GET /admin/ping` in `backend/app.py`; `/search`, `/answer` and `/figures/*` now need a login; `ingestion/create_user.py`; React `AuthGate.jsx` (login page, session bar); `tests/test_auth.py` (19 tests), `tests/test_create_user.py` (3); conftest.py runs the older API tests as a logged-in Learner.
+- **What was wrong, and how it was caught:**
+  - The first plan returned the token for the page to send as `Authorization: Bearer`. That would have broken every figure: the page loads them with `<img src="/figures/...">`, and an `<img>` cannot send a header. Caught while reading `ResultCard.jsx` before writing the frontend. Changed to an httpOnly cookie (sent automatically, unreadable by JavaScript); Bearer still accepted for scripts and tests.
+  - `create_user.py` refused every password in Git Bash ("password must be 8 to 72 bytes long") although Mia typed 8+ characters: Git Bash does not pass hidden input to Python's `getpass`, so the script received an empty password. Caught by running it. Workaround: `winpty python ingestion/create_user.py ...`. Not fixed in the code yet.
+  - Two forgery tests signed tokens with short keys, and PyJWT warned that they were too weak. Caught from the pytest warnings; keys made longer.
+  - Claude could not delete files on Mia's PC, so three temporary `.new` copies from P7-34 stayed in `frontend/src/`. Caught in `git status`; deleted by hand.
+- **How we checked it:** 22 passed (Mia, 11 Nov, on her PC with the local database). Claude also broke the role check and the `/search` protection on purpose in its copy: the tests failed both times, so they really test the checks. Checked live in the browser: logged out -> 401, Learner on `/admin/ping` -> 403, Admin -> 200 (backend log screenshot in the PR).
+- **What we could NOT verify:** the full test suite with the real figure data (32 tests skipped without it; Mia's local database has no handbook data yet). The frontend build was checked by Claude outside Mia's PC, because npm was blocked there.
+- **Known limitations:** the role is read from the token, so a role change applies only after expiry (8 h); no limit on login attempts; Admins land on the search page until the admin screens exist (UC-05 step 4).
+- **Commit / PR:** branch `feature/P7-35-jwt-roles`
