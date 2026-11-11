@@ -352,3 +352,19 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
   - While preparing the experiment, Claude found that `backend/answer.py` still loaded prompt v1 although EVALUATION.md 3.6 says v2 is kept. Fixed in its own commit (3f46231).
 - **What we could NOT verify:** the human check of the 100 rewrites is not done; the two reasons given in 4.1 for the failure (RRF weight of the original list, truncated citing paragraphs) are hypotheses.
 - **Commit / PR:** branch `feature/P7-33-query-reformulation` (commits 3f46231, 5d006e6, c81f14f)
+
+
+
+
+### 2026-11-11 - P7-34: React search page (low-confidence notice, figure after text, design pass)
+- **Who:** Mia
+- **Tool:** Claude (code; it read the repository on Mia's PC and wrote the three files there)
+- **What we asked:** take over Clara's search page (P7-24): show a visible notice when `/search` returns `"confidence": "low"` (P7-48, FR-002, UC-02 A3), show the text first and load the figure after it behind a placeholder (UC-02 A4, NFR-001), keep caption, handbook and printed page always visible (BR-002), and a design pass.
+- **What came back:** changes to `frontend/src/App.jsx` (reads `confidence`, amber notice), `ResultCard.jsx` (figure number, handbook and page first, then caption and passage; the image request starts one frame after the text is painted (`requestAnimationFrame`), behind a fixed-size placeholder; uses `thumbnail_url` when present, with a link to the full-size image; a message if the image fails while the caption and page stay visible) and `styles.css` (colour tokens, cards, notice, placeholder, safety note).
+- **What was wrong, and how it was caught:**
+  - `git status`, as seen by Claude, listed about 68 modified files Mia had not touched. They were only Windows line endings (CRLF), seen differently by Claude's shell; `git diff --ignore-cr-at-eol` showed no real change. Caught before committing, so nothing unrelated went into the commit.
+  - Claude wrote temporary `.new` copies of the three files and could not delete them from Mia's PC. Caught in `git status`; deleted by hand before committing.
+  - Claude could not run `npm run build` on Mia's PC (npm was blocked from its side), so the build was checked on a separate copy outside her PC. It passed there.
+- **How we checked it:** the build (`vite build`) passes. Not yet: the page has not been tested against the live backend, because Mia's local database had no handbook data; the low-confidence notice, the figure loading order and the slow-3G behaviour still have to be checked once Clara's database dump is restored.
+- **What we could NOT verify:** whether the notice appears in practice: it depends on `LOW_CONFIDENCE_BELOW`, still a provisional value (P7-48). The real load time on a throttled 3G connection (NFR-001) is not measured.
+- **Commit / PR:** branch `feature/P7-34-react-search-page` (commit c0932a7)
