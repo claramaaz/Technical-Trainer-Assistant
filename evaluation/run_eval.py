@@ -2,10 +2,16 @@
 
 Usage (from the repository root, database running):
     python evaluation/run_eval.py run   <label> [text|image|joint|passages|hybrid]   # ask every question, write runs/<label>/
+    python evaluation/run_eval.py run   <label> reformulated v1|v2   # P7-33: the LLM rewrites each question first
     python evaluation/run_eval.py score <label>   # recompute the summary after judgements were added
 
 The optional mode (P7-30) is the retrieval mode of backend/retrieval.py; without it, RETRIEVAL_MODE
 (environment or .env, default text). It is written in meta.txt and in the summary.
+
+"reformulated" (P7-33) asks the LLM ONCE per question (backend/reformulate.py, prompt v1 or v2), with a
+pause between calls and retries on 429/5xx, and writes runs/<label>/reformulations.csv: the rewritten
+question, its status, HTTP status, retries and time, and an empty "check" column for a person
+(faithful / cause_added / intent_changed). The same rewrite is used in both scopes.
 
 'run' asks every question of evaluation/questions.csv in two scopes:
     own = only the handbook named in the question (comparable with the 15B-only baseline, EVALUATION 3.3)
@@ -33,6 +39,7 @@ import csv
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,6 +53,10 @@ QUESTIONS = ROOT / "evaluation" / "questions.csv"
 JUDGEMENTS = ROOT / "evaluation" / "judgements.csv"
 RUNS = ROOT / "evaluation" / "runs"
 SCOPES = ("own", "all")
+REFORMULATION_FIELDS = ["question_id", "type", "question", "reformulated", "status", "http_status",
+                        "retries", "ms", "check"]
+REFORMULATION_PAUSE = 6     # seconds between two LLM calls (the free tier refuses bursts: 429)
+TYPES = ("topic", "symptom")
 RANKED_FIELDS = ["question_id", "type", "scope", "answered", "rank", "db_id", "handbook_id",
                  "figure_number", "printed_page", "score", "expected"]
 JUDGEMENT_FIELDS = ["question_id", "handbook_id", "figure_number", "score", "judge", "note"]
@@ -71,20 +82,23 @@ def answerable(question):
     return question["type"] != "no-answer"
 
 
-def run_questions(questions, index, embed=None, k=TOP_K, mode="text"):
+def run_questions(questions, index, embed=None, k=TOP_K, mode="text", reformulated=None):
     """One row per returned figure, for every question and scope (see the module docstring).
 
-    mode: "text", "image" or "joint" (P7-30): the same ranking as the live search in that mode."""
+    mode: a mode of backend/retrieval.py: the same ranking as the live search in that mode.
+    reformulated: {question id: rewritten question or None} for the "reformulated" mode (P7-33)."""
+    reformulated = reformulated or {}
     embed = embed or retrieval.embed_query
     rows = []
     for q in questions:
         vector = embed(q["question"])
         for scope in SCOPES:
             handbooks = [q["handbook"]] if scope == "own" else None
-            ranked, _best_text = retrieval.rank_query(index, q["question"], vector, k, handbooks, mode)
+            rewrite = reformulated.get(q["id"])
+            ranked, _best_text = retrieval.rank_query(index, q["question"], vector, k, handbooks, mode, rewrite)
             if not ranked:
                 raise RuntimeError(f"{q['id']}: no figure returned in scope {scope}: is the database empty?")
-            found = retrieval.retrieve(q["question"], k, index, vector, handbooks, mode)
+            found = retrieval.retrieve(q["question"], k, index, vector, handbooks, mode, rewrite)
             for position, (figure_db_id, score) in enumerate(ranked, start=1):
                 d = index.documents[figure_db_id]
                 rows.append({
@@ -168,6 +182,9 @@ def evaluate_run(ranked_rows, questions, scores):
             "answerable": len(ans), "no_answer": len(noans),
             "auto": summarize(auto) if auto else None,
             "auto_ranks": dict(zip(ans, auto)),
+            # P7-33: topic and symptom questions apart (the improvement targets the symptom ones)
+            "by_type": {t: summarize([r for i, r in zip(ans, auto) if by_type.get(i) == t])
+                        for t in TYPES if any(by_type.get(i) == t for i in ans)},
             "human": summarize(human_done) if human_done else None,
             "human_judged": len(human_done),
             "human_ranks": {i: r for i, (r, complete) in zip(ans, human) if complete},
@@ -197,11 +214,40 @@ def mode_details(mode):
     return f" ({'; '.join(parts)})" if parts else ""
 
 
-def summary_text(label, result, questions, meta):
+def reformulation_lines(rows):
+    """Summary lines about the LLM rewrites of a "reformulated" run (P7-33)."""
+    if not rows:
+        return []
+    ok = [r for r in rows if r["status"] == "ok"]
+    failed = {}
+    for r in rows:
+        if r["status"] != "ok":
+            failed[r["status"]] = failed.get(r["status"], 0) + 1
+    times = sorted(int(r["ms"]) for r in rows if str(r.get("ms", "")).isdigit())
+    median = times[len(times) // 2] if times else "?"
+    retries = sum(int(r["retries"]) for r in rows if str(r.get("retries", "")).isdigit())
+    checked = [r for r in rows if (r.get("check") or "").strip()]
+    lines = ["", "LLM rewrites (reformulations.csv): one call per question, the same rewrite in both scopes.", "",
+             "| LLM calls | Rewrites used | Failed (searched with the original only) | Retries | Median time |",
+             "| --- | --- | --- | --- | --- |",
+             f"| {len(rows)} | {len(ok)} | {sum(failed.values())}"
+             + (f" ({', '.join(f'{k}: {v}' for k, v in sorted(failed.items()))})" if failed else "")
+             + f" | {retries} | {median} ms |"]
+    if checked:
+        counts = {}
+        for r in checked:
+            counts[r["check"].strip()] = counts.get(r["check"].strip(), 0) + 1
+        lines += ["", "Human check of the rewrites: "
+                  + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())) + f" ({len(checked)} checked)."]
+    return lines
+
+
+def summary_text(label, result, questions, meta, extra_lines=()):
     lines = [f"# Evaluation run `{label}`", "",
              f"- Date (UTC): {meta.get('date', '?')}; git commit: {meta.get('commit', '?')}",
              f"- Model: {retrieval.MODEL_NAME}; threshold: {retrieval.THRESHOLD}; top {TOP_K}",
-             f"- Retrieval mode: {meta.get('mode', 'text')}" + mode_details(meta.get("mode", "text")),
+             f"- Retrieval mode: {meta.get('mode', 'text')}" + mode_details(meta.get("mode", "text"))
+             + (f"; rewrite prompt {meta['prompt']}" if meta.get("prompt") else ""),
              f"- Questions: {len(questions)} ({sum(answerable(q) for q in questions)} answerable, "
              f"{sum(not answerable(q) for q in questions)} no-answer)",
              "- own = only the question's handbook; all = every searchable handbook", "",
@@ -211,6 +257,13 @@ def summary_text(label, result, questions, meta):
         lines.append(f"| {scope} | auto (expected figure) | {r['answerable']} | {fmt(r['auto'])} |")
         lines.append(f"| {scope} | human (scored 2) | {r['human_judged']} of {r['answerable']} judged | "
                      f"{fmt(r['human'])} |")
+    lines += ["", "By question type (auto rule):", "", "| Scope | Type | Questions | Hit@1 | Hit@5 | MRR@5 |",
+              "| --- | --- | --- | --- | --- | --- |"]
+    for scope in SCOPES:
+        for t, metrics in result[scope].get("by_type", {}).items():
+            n = sum(1 for q in questions if q["type"] == t)
+            lines.append(f"| {scope} | {t} | {n} | {fmt(metrics)} |")
+    lines += list(extra_lines)
     lines += ["", "| Scope | No-answer accuracy | Answerable questions refused by the threshold |",
               "| --- | --- | --- |"]
     for scope in SCOPES:
@@ -254,23 +307,66 @@ def score_run(label, meta=None):
     meta = meta or dict(r.split(": ", 1) for r in (folder / "meta.txt").read_text(encoding="utf-8").splitlines()
                         if ": " in r)
     questions = read_csv(QUESTIONS)
-    text = summary_text(label, evaluate_run(ranked, questions, scores_from(read_csv(JUDGEMENTS))), questions, meta)
+    extra = reformulation_lines(read_csv(folder / "reformulations.csv"))
+    text = summary_text(label, evaluate_run(ranked, questions, scores_from(read_csv(JUDGEMENTS))), questions, meta,
+                        extra)
     with open(folder / "summary.md", "w", encoding="utf-8", newline="\r\n") as fh:
         fh.write(text)
     print(text)
     print(f"Saved to {folder / 'summary.md'}")
 
 
-def run(label, mode=None):
+def reformulate_all(questions, prompt, reformulate_fn=None, sleep=time.sleep, say=print):
+    """One LLM rewrite per question (P7-33): (rows for reformulations.csv, {question id: text or None}).
+
+    429 and 5xx answers are retried (the retry of evaluation/prompt_eval.py); a failure leaves None,
+    so that question is searched with its original text only."""
+    if reformulate_fn is None:
+        import httpx
+
+        from backend.reformulate import reformulate
+        from prompt_eval import HttpLog, retrying_post   # here: prompt_eval imports this module
+        log = HttpLog()
+        post = retrying_post(httpx.post, log, say=say)
+
+        def reformulate_fn(text):
+            log.reset()
+            out = reformulate(text, prompt, post=post)
+            return {**out, "retries": log.retries}
+    rows, texts = [], {}
+    for n, q in enumerate(questions):
+        if n:
+            sleep(REFORMULATION_PAUSE)
+        out = reformulate_fn(q["question"])
+        texts[q["id"]] = out["text"] if out["status"] == "ok" else None
+        rows.append({"question_id": q["id"], "type": q["type"], "question": q["question"],
+                     "reformulated": out["text"] or "", "status": out["status"],
+                     "http_status": out.get("http_status", ""), "retries": out.get("retries", 0),
+                     "ms": out.get("ms", ""), "check": ""})
+        say(f"  {q['id']} {out['status']}: {out['text'] or '(original question kept)'}")
+    return rows, texts
+
+
+def run(label, mode=None, prompt=None):
     folder = check_label(label)
     if (folder / "ranked.csv").exists():
         sys.exit(f"{folder} already exists: choose a new label (runs are kept as evidence)")
     mode = mode or retrieval.retrieval_mode()
     if mode not in retrieval.MODES:
         sys.exit(f"mode must be one of {retrieval.MODES}")
+    if (mode == "reformulated") != (prompt is not None):
+        sys.exit("the rewrite prompt (v1 or v2) is given with the reformulated mode, and only with it")
     questions = read_csv(QUESTIONS)
-    rows = run_questions(questions, retrieval.load_index(), mode=mode)
+    rewrites = None
+    if mode == "reformulated":
+        if prompt not in ("v1", "v2"):
+            sys.exit("prompt must be v1 or v2")
+        reformulation_rows, rewrites = reformulate_all(questions, prompt)
+        write_csv(folder / "reformulations.csv", REFORMULATION_FIELDS, reformulation_rows)
+    rows = run_questions(questions, retrieval.load_index(), mode=mode, reformulated=rewrites)
     meta = {"date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"), "commit": git_commit(), "mode": mode}
+    if prompt:
+        meta["prompt"] = prompt
     write_csv(folder / "ranked.csv", RANKED_FIELDS, rows)
     with open(folder / "meta.txt", "w", encoding="utf-8", newline="\r\n") as fh:
         fh.write("".join(f"{k}: {v}\n" for k, v in meta.items()))
@@ -284,12 +380,13 @@ def run(label, mode=None):
 
 def main():
     args = sys.argv[1:]
-    if args[:1] == ["run"] and len(args) in (2, 3):
-        run(args[1], args[2] if len(args) == 3 else None)
+    if args[:1] == ["run"] and len(args) in (2, 3, 4):
+        run(args[1], args[2] if len(args) >= 3 else None, args[3] if len(args) == 4 else None)
     elif args[:1] == ["score"] and len(args) == 2:
         score_run(args[1])
     else:
-        sys.exit("Usage: python evaluation/run_eval.py run <label> [text|image|joint|passages|hybrid]  |  score <label>")
+        sys.exit("Usage: python evaluation/run_eval.py run <label> [text|image|joint|passages|hybrid]"
+                 "  |  run <label> reformulated v1|v2  |  score <label>")
 
 
 if __name__ == "__main__":

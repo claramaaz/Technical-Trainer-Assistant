@@ -22,6 +22,9 @@ how the figures are ranked:
                with every chunk, and a chunk that mentions "Figure 3-3" gives its score to figure 3-3.
     hybrid   = the text list and the passages list fused with RRF (SRS UC-02 step 3: the system
                searches the stored text and figures together).
+    reformulated = P7-33 experiment: the text list of the ORIGINAL question and the text list of the
+               question rewritten by the LLM in handbook words (backend/reformulate.py), fused with
+               RRF. If the rewrite fails, the original question alone is used (same as "text").
 In every mode the "no answer" decision and the confidence use the TEXT similarity of the best text
 match, the score the thresholds were set on: the image score of CLIP is on another scale.
 """
@@ -46,7 +49,7 @@ MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
 # P7-30. Same name as ingestion/embed_images.py: the question and the images must use one model.
 IMAGE_MODEL_NAME = "clip-ViT-B-32"
-MODES = ("text", "image", "joint", "passages", "hybrid")
+MODES = ("text", "image", "joint", "passages", "hybrid", "reformulated")
 DEFAULT_MODE = "text"
 # Reciprocal Rank Fusion: score = sum over the lists of 1 / (RRF_K + rank). 60 is the value of the
 # paper that introduced it (Cormack, Clarke and Buettcher, SIGIR 2009); not tuned on our questions.
@@ -271,12 +274,13 @@ def fuse_rrf(ranked_lists, k, rrf_k=RRF_K):
     return sorted(fused.items(), key=lambda item: (-item[1], item[0]))[:k]
 
 
-def rank_query(index, query, query_vector, k, handbooks=None, mode=None):
+def rank_query(index, query, query_vector, k, handbooks=None, mode=None, reformulated=None):
     """The ranking used by retrieve() and by the evaluation, for the chosen mode.
 
     Returns (ranked, best_text_score): ranked = [(figure id, TEXT similarity)] in the order of the
     mode; best_text_score = the text similarity of the best TEXT match (for the threshold).
-    query_vector is the bge vector of the question (the evaluation computes it once)."""
+    query_vector is the bge vector of the question (the evaluation computes it once).
+    reformulated: the rewritten question ("reformulated" mode only); None = use the original only."""
     mode = mode or retrieval_mode()
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
@@ -285,7 +289,14 @@ def rank_query(index, query, query_vector, k, handbooks=None, mode=None):
         return ranked, (ranked[0][1] if ranked else None)
     text_ranked = rank(index, query_vector, CANDIDATES, handbooks)
     best_text = text_ranked[0][1] if text_ranked else None
-    if mode in ("image", "joint"):
+    if mode == "reformulated":
+        if not reformulated:
+            return text_ranked[:k], best_text
+        # best_text stays the one of the ORIGINAL question: a rewrite can reorder the figures,
+        # it can never turn a question without an answer into an answered one.
+        rewritten = rank(index, embed_query(reformulated), CANDIDATES, handbooks)
+        order = fuse_rrf([text_ranked, rewritten], k)
+    elif mode in ("image", "joint"):
         image_ranked = rank_image(index, embed_image_query(query), CANDIDATES if mode == "joint" else k,
                                   handbooks)
         order = (fuse_rrf([text_ranked, image_ranked], k) if mode == "joint" else image_ranked[:k])
@@ -298,7 +309,7 @@ def rank_query(index, query, query_vector, k, handbooks=None, mode=None):
     return [(fid, known[fid]) for fid, _ in order if fid in known], best_text
 
 
-def retrieve(query, k=5, index=None, query_vector=None, handbooks=None, mode=None):
+def retrieve(query, k=5, index=None, query_vector=None, handbooks=None, mode=None, reformulated=None):
     """Top-k figures for a question, or {"results": [], "reason": "no_adequate_answer"}.
 
     When figures are returned, "confidence" is "high", or "low" when the best score is below
@@ -308,13 +319,19 @@ def retrieve(query, k=5, index=None, query_vector=None, handbooks=None, mode=Non
     threshold is applied to the best score inside that selection.
 
     index and query_vector can be passed in (tests do); by default they are loaded.
-    mode: "text", "image", "joint", "passages" or "hybrid" (P7-30); None = RETRIEVAL_MODE. "score" is always the text
+    mode: "text", "image", "joint", "passages", "hybrid" or "reformulated"; None = RETRIEVAL_MODE.
+    reformulated: the rewritten question for the "reformulated" mode (the evaluation passes it).
+    When it is None in that mode, the LLM is asked here, but only if the ORIGINAL question passes
+    the threshold: a question refused anyway costs no LLM call. "score" is always the text
     similarity, and the threshold is applied to the best TEXT match in every mode.
     """
     index = index or load_index()
     if query_vector is None:
         query_vector = embed_query(query)
-    ranked, best_text = rank_query(index, query, query_vector, k, handbooks, mode)
+    mode = mode or retrieval_mode()
+    if mode == "reformulated" and reformulated is None:
+        reformulated = _live_reformulation(index, query, query_vector, handbooks)
+    ranked, best_text = rank_query(index, query, query_vector, k, handbooks, mode, reformulated)
     if not ranked or best_text is None or best_text < THRESHOLD:
         return {"results": [], "reason": NO_ANSWER}
     results = []
@@ -339,6 +356,16 @@ def retrieve(query, k=5, index=None, query_vector=None, handbooks=None, mode=Non
         })
     confidence = "low" if best_text < LOW_CONFIDENCE_BELOW else "high"
     return {"results": results, "reason": None, "confidence": confidence}
+
+
+def _live_reformulation(index, query, query_vector, handbooks):
+    """The rewritten question for a live search, or None (refused anyway, or the LLM failed)."""
+    first = rank(index, query_vector, 1, handbooks)
+    if not first or first[0][1] < THRESHOLD:
+        return None
+    from backend.reformulate import reformulate   # here: backend.reformulate imports this module
+    prompt = os.environ.get("REFORMULATE_PROMPT") or read_env_file(ROOT / ".env").get("REFORMULATE_PROMPT") or "v1"
+    return reformulate(query, prompt.strip())["text"]
 
 
 def image_path_for(figure_id):

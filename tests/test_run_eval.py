@@ -109,3 +109,36 @@ def test_summary_names_only_what_the_retrieval_mode_uses():
     assert "passages" in run_eval.mode_details("passages") and "clip" not in run_eval.mode_details("passages")
     hybrid = run_eval.mode_details("hybrid")
     assert "RRF" in hybrid and "passages" in hybrid and "clip" not in hybrid
+
+
+# --- P7-33: reformulated runs ---------------------------------------------------------------------
+
+def test_metrics_are_given_per_question_type(rows):
+    result = run_eval.evaluate_run(rows, QUESTIONS, scores={})
+    assert set(result["all"]["by_type"]) == {"topic", "symptom"}
+    assert result["all"]["by_type"]["topic"]["Hit@1"] == 0.0      # Q1: expected figure ranked 2nd
+    assert result["all"]["by_type"]["symptom"]["Hit@1"] == 1.0    # Q3: ranked 1st
+
+
+def test_one_llm_call_per_question_with_a_pause_and_failures_keep_the_original():
+    answers = iter([{"text": "rewrite 1", "status": "ok", "http_status": 200, "retries": 0, "ms": 300},
+                    {"text": None, "status": "http_error", "http_status": 429, "retries": 3, "ms": 9000},
+                    {"text": "rewrite 3", "status": "ok", "http_status": 200, "retries": 1, "ms": 500}])
+    pauses = []
+    rows, texts = run_eval.reformulate_all(QUESTIONS, "v1", reformulate_fn=lambda q: next(answers),
+                                           sleep=pauses.append, say=lambda m: None)
+    assert texts == {"Q1": "rewrite 1", "Q2": None, "Q3": "rewrite 3"}
+    assert pauses == [run_eval.REFORMULATION_PAUSE] * 2          # between calls, not before the first
+    assert [r["check"] for r in rows] == ["", "", ""]             # left for a person
+    lines = "\n".join(run_eval.reformulation_lines(rows))
+    assert "| 3 | 2 | 1 (http_error: 1) | 4 | 500 ms |" in lines
+
+
+def test_the_rewrite_is_used_by_the_ranking(index, monkeypatch):
+    seen = []
+    real = run_eval.retrieval.rank_query
+    monkeypatch.setattr(run_eval.retrieval, "rank_query",
+                        lambda *a, **kw: seen.append(a[6] if len(a) > 6 else None) or real(*a, **kw))
+    run_eval.run_questions(QUESTIONS[:1], index, embed=VECTORS.__getitem__, k=3, mode="text",
+                           reformulated={"Q1": "rewritten"})
+    assert len(seen) == 4 and set(seen) == {"rewritten"}         # ranking + threshold, in both scopes

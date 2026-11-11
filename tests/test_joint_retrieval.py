@@ -150,3 +150,51 @@ def test_threshold_still_uses_the_best_text_match_with_passages(index, monkeypat
 def test_chunk_search_reads_only_the_searchable_view():
     tables = set(re.findall(r"(?:FROM|JOIN)\s+(\w+)", retrieval.CHUNK_RANK_SQL, flags=re.I))
     assert tables == {"searchable_chunks"}
+
+
+# --- P7-33: the "reformulated" mode (original question + rewritten question, fused with RRF) ---
+
+def use_rewrite_vector(monkeypatch, vector):
+    """embed_query() of the rewritten question gives `vector`; the original vector is passed in."""
+    monkeypatch.setattr(retrieval, "embed_query", lambda text: vector)
+
+
+def test_rewritten_question_is_fused_with_the_original(index, monkeypatch):
+    # Original [1, 0]: 0 (0.9), 1 (0.8), 2 (0.1). Rewrite [-1, 0]: 2, 1, 0 (the reverse).
+    use_rewrite_vector(monkeypatch, np.array([-1.0, 0.0]))
+    found = retrieve("q", k=3, index=index, query_vector=np.array([1.0, 0.0]), mode="reformulated",
+                     reformulated="rewritten q")
+    # 0: 1/61 + 1/63; 1: 2/62; 2: 1/63 + 1/61 -> 0 and 2 tie (smaller id first), then 1
+    assert ids(found) == [0, 2, 1]
+    assert [r["score"] for r in found["results"]] == pytest.approx([0.9, 0.1, 0.8])   # original question
+
+
+def test_without_a_rewrite_the_reformulated_mode_is_the_text_mode(index, monkeypatch):
+    use_rewrite_vector(monkeypatch, np.array([-1.0, 0.0]))
+    q = np.array([1.0, 0.0])
+    text = retrieve("q", k=3, index=index, query_vector=q, mode="text")
+    assert retrieve("q", k=3, index=index, query_vector=q, mode="reformulated", reformulated="") == text
+
+
+def test_a_rewrite_cannot_turn_a_no_answer_question_into_an_answer(index, monkeypatch):
+    # Original best score 0.45 < THRESHOLD; the rewrite matches figure 0 perfectly: still no answer.
+    use_rewrite_vector(monkeypatch, np.array([1.0 / 0.9, 0.0]))
+    found = retrieve("q", k=3, index=index, query_vector=np.array([0.5, 0.0]), mode="reformulated",
+                     reformulated="a very technical rewrite")
+    assert found == {"results": [], "reason": NO_ANSWER}
+
+
+def test_live_search_does_not_call_the_llm_for_a_question_refused_anyway(index, monkeypatch):
+    called = []
+    monkeypatch.setattr("backend.reformulate.reformulate", lambda *a, **kw: called.append(a) or {"text": "x"})
+    found = retrieve("q", k=3, index=index, query_vector=np.array([0.5, 0.0]), mode="reformulated")
+    assert found["reason"] == NO_ANSWER and called == []
+
+
+def test_live_search_asks_the_llm_when_the_question_passes_the_threshold(index, monkeypatch):
+    called = []
+    monkeypatch.setattr("backend.reformulate.reformulate",
+                        lambda query, prompt="v1", **kw: called.append((query, prompt)) or {"text": None})
+    monkeypatch.setenv("REFORMULATE_PROMPT", "v2")
+    found = retrieve("q", k=3, index=index, query_vector=np.array([1.0, 0.0]), mode="reformulated")
+    assert called == [("q", "v2")] and ids(found) == [0, 1, 2]   # LLM failed: original order
