@@ -101,3 +101,11 @@ def test_summary_shows_both_scopes_and_the_refusal(rows):
     text = run_eval.summary_text("test", result, QUESTIONS, {"date": "d", "commit": "c"})
     assert "| own | auto (expected figure) | 2 |" in text and "| all | auto (expected figure) | 2 |" in text
     assert "1/2: Q3" in text and "| all | 1/1 |" in text
+
+
+def test_summary_names_only_what_the_retrieval_mode_uses():
+    assert run_eval.mode_details("text") == ""
+    assert "clip" in run_eval.mode_details("image") and "RRF" not in run_eval.mode_details("image")
+    assert "passages" in run_eval.mode_details("passages") and "clip" not in run_eval.mode_details("passages")
+    hybrid = run_eval.mode_details("hybrid")
+    assert "RRF" in hybrid and "passages" in hybrid and "clip" not in hybrid

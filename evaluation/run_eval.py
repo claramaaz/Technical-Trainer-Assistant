@@ -1,8 +1,11 @@
 """Evaluation run on the LIVE search (P7-17; brief section 8, FR-005, UC-06 steps 2-4, SPEC 5.3).
 
 Usage (from the repository root, database running):
-    python evaluation/run_eval.py run   <label>   # ask every question, write evaluation/runs/<label>/
+    python evaluation/run_eval.py run   <label> [text|image|joint|passages|hybrid]   # ask every question, write runs/<label>/
     python evaluation/run_eval.py score <label>   # recompute the summary after judgements were added
+
+The optional mode (P7-30) is the retrieval mode of backend/retrieval.py; without it, RETRIEVAL_MODE
+(environment or .env, default text). It is written in meta.txt and in the summary.
 
 'run' asks every question of evaluation/questions.csv in two scopes:
     own = only the handbook named in the question (comparable with the 15B-only baseline, EVALUATION 3.3)
@@ -68,18 +71,20 @@ def answerable(question):
     return question["type"] != "no-answer"
 
 
-def run_questions(questions, index, embed=None, k=TOP_K):
-    """One row per returned figure, for every question and scope (see the module docstring)."""
+def run_questions(questions, index, embed=None, k=TOP_K, mode="text"):
+    """One row per returned figure, for every question and scope (see the module docstring).
+
+    mode: "text", "image" or "joint" (P7-30): the same ranking as the live search in that mode."""
     embed = embed or retrieval.embed_query
     rows = []
     for q in questions:
         vector = embed(q["question"])
         for scope in SCOPES:
             handbooks = [q["handbook"]] if scope == "own" else None
-            ranked = retrieval.rank(index, vector, k, handbooks)
+            ranked, _best_text = retrieval.rank_query(index, q["question"], vector, k, handbooks, mode)
             if not ranked:
                 raise RuntimeError(f"{q['id']}: no figure returned in scope {scope}: is the database empty?")
-            found = retrieval.retrieve(q["question"], k, index, vector, handbooks)
+            found = retrieval.retrieve(q["question"], k, index, vector, handbooks, mode)
             for position, (figure_db_id, score) in enumerate(ranked, start=1):
                 d = index.documents[figure_db_id]
                 rows.append({
@@ -180,10 +185,23 @@ def fmt(metrics):
     return f"{metrics['Hit@1']:.3f} | {metrics[f'Hit@{TOP_K}']:.3f} | {metrics[f'MRR@{TOP_K}']:.3f}"
 
 
+def mode_details(mode):
+    """What the retrieval mode used, for the summary (P7-30): only the parts that mode really uses."""
+    parts = []
+    if mode in ("image", "joint"):
+        parts.append(f"image model {retrieval.IMAGE_MODEL_NAME}")
+    if mode in ("passages", "hybrid"):
+        parts.append(f"{retrieval.CHUNK_CANDIDATES} nearest passages")
+    if mode in ("joint", "hybrid"):
+        parts.append(f"RRF k={retrieval.RRF_K}, {retrieval.CANDIDATES} candidates per list")
+    return f" ({'; '.join(parts)})" if parts else ""
+
+
 def summary_text(label, result, questions, meta):
     lines = [f"# Evaluation run `{label}`", "",
              f"- Date (UTC): {meta.get('date', '?')}; git commit: {meta.get('commit', '?')}",
              f"- Model: {retrieval.MODEL_NAME}; threshold: {retrieval.THRESHOLD}; top {TOP_K}",
+             f"- Retrieval mode: {meta.get('mode', 'text')}" + mode_details(meta.get("mode", "text")),
              f"- Questions: {len(questions)} ({sum(answerable(q) for q in questions)} answerable, "
              f"{sum(not answerable(q) for q in questions)} no-answer)",
              "- own = only the question's handbook; all = every searchable handbook", "",
@@ -243,13 +261,16 @@ def score_run(label, meta=None):
     print(f"Saved to {folder / 'summary.md'}")
 
 
-def run(label):
+def run(label, mode=None):
     folder = check_label(label)
     if (folder / "ranked.csv").exists():
         sys.exit(f"{folder} already exists: choose a new label (runs are kept as evidence)")
+    mode = mode or retrieval.retrieval_mode()
+    if mode not in retrieval.MODES:
+        sys.exit(f"mode must be one of {retrieval.MODES}")
     questions = read_csv(QUESTIONS)
-    rows = run_questions(questions, retrieval.load_index())
-    meta = {"date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"), "commit": git_commit()}
+    rows = run_questions(questions, retrieval.load_index(), mode=mode)
+    meta = {"date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"), "commit": git_commit(), "mode": mode}
     write_csv(folder / "ranked.csv", RANKED_FIELDS, rows)
     with open(folder / "meta.txt", "w", encoding="utf-8", newline="\r\n") as fh:
         fh.write("".join(f"{k}: {v}\n" for k, v in meta.items()))
@@ -262,9 +283,13 @@ def run(label):
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[1] not in ("run", "score"):
-        sys.exit("Usage: python evaluation/run_eval.py run|score <label>")
-    (run if sys.argv[1] == "run" else score_run)(sys.argv[2])
+    args = sys.argv[1:]
+    if args[:1] == ["run"] and len(args) in (2, 3):
+        run(args[1], args[2] if len(args) == 3 else None)
+    elif args[:1] == ["score"] and len(args) == 2:
+        score_run(args[1])
+    else:
+        sys.exit("Usage: python evaluation/run_eval.py run <label> [text|image|joint|passages|hybrid]  |  score <label>")
 
 
 if __name__ == "__main__":
