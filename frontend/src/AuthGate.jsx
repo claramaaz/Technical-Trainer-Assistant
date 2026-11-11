@@ -1,5 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import App from "./App.jsx";
+import AdminArea from "./admin/AdminArea.jsx";
+import { ADMIN_PAGES } from "./admin/adminPages.js";
+import "./admin/admin.css";
+import useHashRoute, { navigate } from "./useHashRoute.js";
 
 // Login screen and session bar around the search page (P7-35; FR-004, UC-05).
 //
@@ -7,7 +11,11 @@ import App from "./App.jsx";
 // stores it, so nothing in localStorage can be stolen. Whether the user is logged in is
 // asked to the server (GET /me). Hiding screens here is only for convenience: the server
 // refuses every protected request on its own (401 / 403), whatever this page shows.
+//
+// P7-36: after login an Admin lands on the admin overview and a Learner on the search page
+// (UC-05 step 4). Only Admins see the admin menu; the admin pages also ask the server.
 export default function AuthGate() {
+  const route = useHashRoute();
   // session: undefined = still asking the server, null = logged out, {email, role} = logged in
   const [session, setSession] = useState(undefined);
   const [notice, setNotice] = useState("");
@@ -29,10 +37,12 @@ export default function AuthGate() {
     setSession(null);
   }
 
-  function sessionExpired() {
+  // useCallback: the same function on every render, so AdminArea does not re-check access
+  // each time this component re-renders.
+  const sessionExpired = useCallback(() => {
     setNotice("Your session has ended. Please log in again.");
     setSession(null);
-  }
+  }, []);
 
   if (session === undefined) return <p className="auth-loading">Loading…</p>;
 
@@ -43,6 +53,7 @@ export default function AuthGate() {
         onLoggedIn={(user) => {
           setNotice("");
           setSession(user);
+          navigate(user.role === "admin" ? "/admin" : "/");
         }}
       />
     );
@@ -61,8 +72,42 @@ export default function AuthGate() {
           Log out
         </button>
       </div>
-      <App onSessionExpired={sessionExpired} />
+      {session.role === "admin" && <AdminNav route={route} />}
+      {route.startsWith("/admin") && session.role === "admin" ? (
+        <AdminArea route={route} onSessionExpired={sessionExpired} />
+      ) : (
+        <>
+          {route.startsWith("/admin") && (
+            <p className="admin-learner-note" role="alert">
+              The admin pages are only for Admin accounts.
+            </p>
+          )}
+          <App onSessionExpired={sessionExpired} />
+        </>
+      )}
     </>
+  );
+}
+
+function AdminNav({ route }) {
+  const links = [
+    { path: "/", title: "Search" },
+    { path: "/admin", title: "Overview" },
+    ...ADMIN_PAGES.map((p) => ({ path: p.path, title: p.title })),
+  ];
+  return (
+    <nav className="admin-nav" aria-label="Admin menu">
+      {links.map((l) => (
+        <a
+          key={l.path}
+          href={`#${l.path}`}
+          className={route === l.path ? "active" : undefined}
+          aria-current={route === l.path ? "page" : undefined}
+        >
+          {l.title}
+        </a>
+      ))}
+    </nav>
   );
 }
 
