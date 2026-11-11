@@ -26,7 +26,7 @@ import httpx
 from backend.retrieval import NO_ANSWER, ROOT
 from migrate import read_env_file  # the folder is added to sys.path by backend.retrieval
 
-PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "answer_system_v1.txt"
+PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "answer_system_v2.txt"  # v2 kept after P7-26 (EVALUATION 3.6)
 TIMEOUT_SECONDS = 10
 SETTINGS = ("LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY")
 
