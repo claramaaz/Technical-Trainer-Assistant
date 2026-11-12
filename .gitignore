@@ -31,3 +31,6 @@ frontend/.vite/
 
 # Personal Claude Code instructions (not shared)
 CLAUDE.local.md
+
+# Database dumps and data archives for local testing (shared privately, never committed)
+dumps/
