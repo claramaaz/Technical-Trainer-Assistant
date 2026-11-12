@@ -1,0 +1,51 @@
+/* "Wrong figure" button and its small form (P7-38). */
+.flag-button {
+  margin-top: 10px;
+  padding: 6px 12px;
+  font-size: 14px;
+  border: 1px solid #c8ccd2;
+  border-radius: 8px;
+  background: #fff;
+  color: #8a1020;
+  cursor: pointer;
+}
+.flag-button:hover { border-color: #8a1020; }
+.flag-form {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #e3c3c7;
+  border-radius: 8px;
+  background: #fdf5f6;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.flag-form label { font-size: 14px; font-weight: 600; }
+.flag-form textarea {
+  font: inherit;
+  font-size: 16px; /* no zoom on iOS */
+  padding: 8px;
+  border: 1px solid #c8ccd2;
+  border-radius: 6px;
+  resize: vertical;
+}
+.flag-actions { display: flex; gap: 8px; }
+.flag-send {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #8a1020;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.flag-cancel {
+  padding: 8px 14px;
+  border: 1px solid #c8ccd2;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+.flag-send:disabled, .flag-cancel:disabled { opacity: 0.6; cursor: default; }
+.flag-error { color: #b00020; margin: 0; font-size: 14px; }
+.flag-done { margin: 10px 0 0; font-size: 14px; color: #1f6b3a; font-weight: 600; }

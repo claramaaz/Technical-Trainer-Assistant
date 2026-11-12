@@ -12,6 +12,9 @@ export default function App({ onSessionExpired }) {
   const [status, setStatus] = useState("idle");
   const [results, setResults] = useState([]);
   const [confidence, setConfidence] = useState(null); // "high" | "low" | null (P7-48)
+  // The question the shown results answer (not the text being typed): a "Wrong figure"
+  // report is stored with it (P7-38, UC-03).
+  const [searchedQuery, setSearchedQuery] = useState("");
   const [errorText, setErrorText] = useState("");
   const latest = useRef(null); // lets a new search cancel the previous one
 
@@ -45,6 +48,7 @@ export default function App({ onSessionExpired }) {
         setStatus("no-answer");
       } else {
         setResults(data.results);
+        setSearchedQuery(q);
         // "confidence" is only sent when figures are returned; anything but "low" counts as high.
         setConfidence(data.confidence === "low" ? "low" : "high");
         setStatus("results");
@@ -92,7 +96,16 @@ export default function App({ onSessionExpired }) {
         </div>
       )}
       {status === "results" &&
-        results.map((r) => <ResultCard key={r.id} result={r} />)}
+        results.map((r) => (
+          // The key includes the question, so a figure returned again for a new question
+          // starts with a fresh "Wrong figure" button.
+          <ResultCard
+            key={`${searchedQuery}|${r.id}`}
+            result={r}
+            query={searchedQuery}
+            onSessionExpired={onSessionExpired}
+          />
+        ))}
 
       <footer className="safety">Training tool only. Not operational aviation guidance.</footer>
     </main>
