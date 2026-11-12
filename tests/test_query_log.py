@@ -89,15 +89,33 @@ def test_latency_is_the_real_time_taken(log_db, monkeypatch):
 def test_answer_endpoint_logs_the_answer_mode(log_db, monkeypatch):
     monkeypatch.setattr(app_module, "retrieve", fake_retrieve(TWO_RESULTS))
     monkeypatch.setattr(app_module, "generate_answer",
-                        lambda q, results, reason: {"mode": "extractive", "sentences": [], "fallback_reason": "no_key"})
+                        lambda q, results, reason, **kw: {"mode": "extractive", "sentences": [], "fallback_reason": "no_key"})
     assert client.get("/answer", params={"q": "four forces"}).status_code == 200
     [row] = rows(log_db)
     assert (row["endpoint"], row["outcome"], row["answer_mode"]) == ("answer", "answered", "extractive")
 
 
+def test_llm_refusal_on_a_weak_match_shows_no_figure_and_is_logged_as_unanswered(log_db, monkeypatch):
+    # FR-002 / UC-02 A1 and FR-007: no weak figure is returned, and the analytics count it as unanswered.
+    weak = {**TWO_RESULTS, "confidence": "low"}
+    monkeypatch.setattr(app_module, "retrieve", fake_retrieve(weak))
+    seen = {}
+
+    def refuses(q, results, reason, confidence=None):
+        seen["confidence"] = confidence
+        return {"mode": "no_answer", "sentences": [], "fallback_reason": "llm_refused_low_confidence"}
+    monkeypatch.setattr(app_module, "generate_answer", refuses)
+    r = client.get("/answer", params={"q": "what is the salary of an airline pilot"})
+    assert r.status_code == 200 and seen["confidence"] == "low"
+    assert r.json()["results"] == [] and "confidence" not in r.json()
+    assert r.json()["answer"]["mode"] == "no_answer"
+    [row] = rows(log_db)
+    assert (row["outcome"], row["answer_mode"], row["result_count"]) == ("no_answer", "no_answer", 0)
+
+
 def test_failure_inside_answer_generation_is_logged(log_db, monkeypatch):
     monkeypatch.setattr(app_module, "retrieve", fake_retrieve(TWO_RESULTS))
-    def broken(q, results, reason):
+    def broken(q, results, reason, **kw):
         raise ValueError("bad")
     monkeypatch.setattr(app_module, "generate_answer", broken)
     assert client.get("/answer", params={"q": "four forces"}).status_code == 500

@@ -124,7 +124,12 @@ def answer(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, 
     query, start = q.strip(), time.perf_counter()
     try:
         found = retrieve(query, k)
-        answer_ = generate_answer(query, found["results"], found["reason"])
+        answer_ = generate_answer(query, found["results"], found["reason"],
+                                  confidence=found.get("confidence"))
+        if answer_["mode"] == "no_answer" and found["results"]:
+            # The LLM found no passage about the question on a low-confidence match (answer.py, rule 4).
+            # FR-002 / UC-02 A1: show no weak match, and count the question as unanswered (FR-007).
+            found = {"results": [], "reason": retrieval.NO_ANSWER}
     except Exception as exc:
         log_query("answer", query, elapsed_ms(start), error=exc)
         raise

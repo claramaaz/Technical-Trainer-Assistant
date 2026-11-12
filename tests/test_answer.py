@@ -69,6 +69,33 @@ def test_nothing_valid_left_gives_extractive():
     assert out["sentences"][0] == {"text": "Four forces act upon an aircraft in flight.", "citations": [748]}
 
 
+def test_llm_refusal_on_a_low_confidence_match_is_no_answer():
+    # FR-002 / UC-02 A1 (e.g. "what is the salary of an airline pilot"): the LLM finds no passage
+    # about the question (prompt rule 8) and the match is weak -> a clear no answer, no passages.
+    out = generate_answer("salary of a pilot", RESULTS, llm=fake(), settings=SETTINGS, confidence="low")
+    assert out == {"mode": "no_answer", "sentences": [], "fallback_reason": "llm_refused_low_confidence"}
+
+
+@pytest.mark.parametrize("confidence", ["high", None])
+def test_llm_refusal_on_a_confident_match_keeps_the_passages(confidence):
+    # Q011, Q036: the LLM refuses because the answer is in the drawing, but the figure is right.
+    out = generate_answer("q", RESULTS, llm=fake(), settings=SETTINGS, confidence=confidence)
+    assert out["mode"] == "extractive" and out["fallback_reason"] == "no_valid_sentences"
+
+
+def test_sentences_all_dropped_by_the_checks_are_not_a_refusal():
+    # The LLM did answer; only our checks removed its sentences: not the same as "no passage is relevant".
+    out = generate_answer("q", RESULTS, llm=fake(("Invented 77 things.", [748])), settings=SETTINGS,
+                          confidence="low")
+    assert out["mode"] == "extractive" and out["fallback_reason"] == "no_valid_sentences"
+
+
+def test_llm_failure_on_a_low_confidence_match_is_still_extractive(monkeypatch):
+    # A service failure says nothing about relevance: the reader still gets the passages.
+    out = generate_answer("q", RESULTS, settings={**SETTINGS, "LLM_API_KEY": ""}, confidence="low")
+    assert out["mode"] == "extractive" and out["fallback_reason"] == "missing_api_key"
+
+
 def test_no_answer_never_calls_the_llm():
     def must_not_be_called(*args):
         raise AssertionError("the LLM was called")

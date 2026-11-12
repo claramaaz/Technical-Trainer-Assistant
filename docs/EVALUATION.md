@@ -367,6 +367,28 @@ No-answer accuracy is 7/8 (own) and 6/8 (all) in every mode, as expected from th
 
 **Decision.** The live search stays in `text` mode (the default of `RETRIEVAL_MODE`); CLIP is not loaded in that mode, so it costs no memory on the server. The other modes stay in the code, switchable and measured, as evidence. **TO CONFIRM WITH SUPERVISOR:** whether retrieving figures through their caption, citing paragraphs and handbook passages, with the picture-based (CLIP) experiment reported as a measured negative result, satisfies "joint retrieval over text and images".
 
+### 3.8 LLM refusal on a weak match becomes "no answer" (FR-002 fix)
+
+**Problem (found in 3.6 and in the app on 12 Nov).** When the LLM returned no sentence (prompt v2, rule 8: no passage is about the question), `generate_answer` treated it like a failure and fell back to the extractive answer, so the retrieved passages and figures were still shown. Example in the app: "what is the salary of an airline pilot" showed Figure 1-22 of 25C with the low-confidence notice. FR-002 and UC-02 A1 ask for a clear "no answer found" and no weak match.
+
+**Rule (our choice, from our own measures).** In `backend/answer.py`: if the LLM returns no sentence **and** retrieval marked the match as low confidence (best score under 0.70), the answer is `no_answer` (`fallback_reason` = `llm_refused_low_confidence`) and `GET /answer` returns no figure; the query log records it as `no_answer` (FR-007). A refusal on a high-confidence match keeps the extractive answer and the figure. A service failure (timeout, HTTP error, missing key, bad JSON) is unchanged.
+
+**Why not "refusal = no answer" everywhere.** In the 10 Nov v2 run the LLM also refused answerable questions whose figure was right: Q036 (expected figure ranked 1, score 0.80), Q011 (expected figure in the top 5, 0.75), and Q005 on one run (ranked 1, 0.71). Every refused question scoring under 0.70 was either a no-answer question (Q046, Q047) or had no expected figure in the top 5 (Q031, Q032), checked against `evaluation/runs/2026-11-11-text/ranked.csv`.
+
+**Measure.** `python evaluation/prompt_eval.py 2026-11-12-refusal --prompt v2 --runs 1` (same 50 questions, same path as `GET /answer`, git commit acb8c4d + this change).
+
+| Measure | Before (`2026-11-10-prompt-v2`, 3 runs) | After (`2026-11-12-refusal`, 1 run) |
+| --- | --- | --- |
+| No-answer questions answered "no answer" | 18/24 runs = 6/8 questions (Q046, Q047 showed passages) | **8/8** |
+| Answerable questions turned into "no answer" by the new rule | - | 2: Q031, Q032 (neither had the expected figure in the top 5) |
+| Answerable questions refused by the LLM on a confident match, figure kept (extractive) | - | 4: Q006, Q011, Q020, Q036 |
+| Sentences kept / returned (mode `llm`) | 201/202 = 99.5 % | 62/63 = 98.4 % |
+| http_error rows | 0 | 0 (17 calls retried after HTTP 429, all recovered) |
+
+**Reading.** The two no-answer questions that used to show a weak match are now refused, and the two answerable questions that became "no answer" were showing a wrong figure anyway, so no correct figure was lost on this set. Figure-retrieval metrics (3.5) do not change: they are computed by `run_eval.py` on `retrieve()`, before the answer layer.
+
+**Limits.** One run (the LLM is not fully stable, 3.6); 0.70 is the provisional low-confidence threshold chosen on this same set, so the rule is not validated on unseen questions; the human judgements (FR-005) are not done yet. The fix is visible in the app only when the search page calls `GET /answer` (it calls `GET /search` today; frontend task).
+
 ## 4. Deliberate improvement: before and after (Week 10)
 
 ### 4.1 Experiment 1: query reformulation (P7-33)
