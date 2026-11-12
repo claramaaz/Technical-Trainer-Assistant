@@ -1,0 +1,62 @@
+/* Admin navigation and pages (P7-36). Separate from styles.css (search page, P7-34). */
+.admin-nav {
+  display: flex;
+  gap: 4px;
+  max-width: 960px;
+  margin: 8px auto 0;
+  padding: 0 16px;
+  overflow-x: auto; /* the menu scrolls sideways on a phone instead of wrapping */
+  border-bottom: 1px solid #d6d9de;
+}
+.admin-nav a {
+  padding: 10px 12px;
+  white-space: nowrap;
+  color: #444;
+  text-decoration: none;
+  font-size: 15px;
+  border-bottom: 3px solid transparent;
+}
+.admin-nav a:hover { color: #1f4e8c; }
+.admin-nav a.active { color: #1f4e8c; font-weight: 600; border-bottom-color: #1f4e8c; }
+
+.admin-page { max-width: 960px; margin: 0 auto; padding: 16px; font-family: system-ui, sans-serif; }
+.admin-page h1 { font-size: 1.5rem; margin: 8px 0 4px; }
+.admin-lead { color: #444; margin: 0 0 16px; max-width: 640px; }
+.admin-status { max-width: 960px; margin: 24px auto; padding: 0 16px; color: #555; font-family: system-ui, sans-serif; }
+.admin-denied { color: #b00020; font-weight: 600; }
+
+.admin-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.admin-card {
+  display: block;
+  padding: 14px;
+  border: 1px solid #d6d9de;
+  border-radius: 10px;
+  background: #fff;
+  color: inherit;
+  text-decoration: none;
+}
+.admin-card:hover { border-color: #1f4e8c; }
+.admin-card h2 { font-size: 1.05rem; margin: 0 0 6px; color: #1f4e8c; }
+.admin-card p { margin: 0 0 10px; font-size: 14px; color: #444; }
+
+.admin-empty {
+  padding: 16px;
+  border: 1px dashed #b8bec7;
+  border-radius: 10px;
+  background: #f7f8fa;
+  color: #444;
+}
+.admin-subtitle { font-size: 1rem; margin: 20px 0 6px; }
+.admin-list { margin: 0; padding-left: 20px; color: #333; }
+.admin-list li { margin: 4px 0; }
+.admin-req { display: inline-block; margin-top: 12px; font-size: 12px; color: #666; }
+
+.admin-learner-note {
+  max-width: 720px;
+  margin: 16px auto 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fde7e9;
+  color: #8a1020;
+  font-family: system-ui, sans-serif;
+}

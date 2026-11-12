@@ -384,3 +384,16 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **What we could NOT verify:** the full test suite with the real figure data (32 tests skipped without it; Mia's local database has no handbook data yet). The frontend build was checked by Claude outside Mia's PC, because npm was blocked there.
 - **Known limitations:** the role is read from the token, so a role change applies only after expiry (8 h); no limit on login attempts; Admins land on the search page until the admin screens exist (UC-05 step 4).
 - **Commit / PR:** branch `feature/P7-35-jwt-roles`
+
+
+### 2026-11-11 - P7-36: admin layout (Ingestion, QA queue, Coverage, Analytics, empty for now)
+- **Who:** Mia
+- **Tool:** Claude (design and code; it wrote the files on Mia's PC)
+- **What we asked:** the admin skeleton of week 5 (brief section 9) with the four pages of brief section 6; the pages may be empty.
+- **What came back:** `frontend/src/admin/adminPages.js` (each page described once: purpose, requirement, what it will do, empty-state text), `AdminArea.jsx` (asks the server `GET /admin/ping` before showing anything; 403 -> "Admin role required", 401 -> back to login), `admin.css`, `useHashRoute.js` (addresses like `#/admin/coverage`), and `AuthGate.jsx` (admin menu for Admins only; after login an Admin lands on the admin overview and a Learner on search, UC-05 step 4). No backend change.
+- **Design decisions:** the pages are empty but explain themselves (brief section 6: someone who did not build the system must be able to run it). Addresses use `#` because `/admin/...` would clash with the backend's `/admin/ping` through the Vite proxy, and `#` needs no routing library or server change.
+- **What was wrong, and how it was caught:**
+  - When the backend was stopped, the login page said "The server answered with an error (500)" instead of "Could not reach the server": in development the Vite proxy answers 500 itself, so the page's "server unreachable" message never shows. Caught when Mia tested with the backend off by mistake; found by reading the backend window, which showed it had shut down. Not fixed yet (it only affects development).
+- **How we checked it:** the frontend builds (checked by Claude outside Mia's PC, as npm is blocked from its side). In the browser: [Admin lands on the overview with the menu; each page opens; a Learner sees no menu and gets "The admin pages are only for Admin accounts" at #/admin/coverage; the menu scrolls on a phone-sized screen].
+- **What we could NOT verify:** there are no automated tests for the React pages in this project; the checks above are manual.
+- **Commit / PR:** branch `feature/P7-36-admin-layout`
