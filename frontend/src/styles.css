@@ -1,32 +1,116 @@
 /* Mobile first: one column that fills the screen; capped on desktop. */
+:root {
+  --text: #1a1a1a;
+  --muted: #555;
+  --border: #d6d9de;
+  --surface: #ffffff;
+  --background: #f5f6f8;
+  --accent: #1f4e8c;
+  --danger: #b00020;
+  --warning-bg: #fff4d6;
+  --warning-border: #c98a00;
+  --warning-text: #5c3d00;
+}
 body {
   font-family: system-ui, sans-serif;
   margin: 0;
-  color: #1a1a1a;
+  color: var(--text);
+  background: var(--background);
+  line-height: 1.5;
 }
 .page {
   max-width: 720px;
   margin: 0 auto;
-  padding: 12px;
+  padding: 16px;
 }
-h1 { font-size: 1.5rem; }
+.top h1 { font-size: 1.5rem; margin: 8px 0 0; }
+.subtitle { color: var(--muted); margin: 4px 0 16px; font-size: 15px; }
+
 .search { display: flex; gap: 8px; }
-.search input { flex: 1; min-width: 0; font-size: 16px; padding: 10px; } /* 16px: no zoom on iOS */
-.search button { font-size: 16px; padding: 10px 16px; }
-.hint { color: #555; margin-top: 16px; }
-.error { color: #b00020; margin-top: 16px; }
+.search input {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px; /* 16px: no zoom on iOS */
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.search input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.search button {
+  font-size: 16px;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.search button:disabled { opacity: 0.6; cursor: default; }
+
+.hint { color: var(--muted); margin-top: 16px; }
+.error { color: var(--danger); margin-top: 16px; }
 .no-answer {
   margin-top: 24px;
   padding: 16px;
-  border: 2px solid #b00020;
+  border: 2px solid var(--danger);
   border-radius: 8px;
-  color: #b00020;
+  background: var(--surface);
+  color: var(--danger);
   font-weight: 700;
   font-size: 18px;
   text-align: center;
 }
-.card { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin-top: 16px; }
-.card img { width: 100%; height: auto; display: block; background: #f4f4f4; }
-.caption { font-size: 1rem; font-weight: 600; margin: 8px 0; }
-.passage { overflow-wrap: anywhere; }
-.source { color: #555; font-size: 14px; margin: 8px 0 0; }
+
+/* P7-34: visible notice for a low-confidence match (FR-002, UC-02 A3). */
+.low-confidence {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--warning-border);
+  border-left-width: 6px;
+  border-radius: 8px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 16px;
+}
+.source { color: var(--muted); font-size: 14px; margin: 0; }
+.figure-number {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #e8eef7;
+  color: var(--accent);
+  font-weight: 600;
+}
+.caption { font-size: 1.05rem; font-weight: 600; margin: 8px 0; }
+.passage { overflow-wrap: anywhere; margin: 0 0 12px; }
+
+/* Figure area: the placeholder reserves space so the text does not jump when the image arrives. */
+.figure { border-radius: 6px; overflow: hidden; background: #eef0f3; }
+.figure-loading { min-height: 200px; position: relative; }
+.figure-loading img { position: absolute; inset: 0; opacity: 0; } /* hidden until fully loaded */
+.figure img { width: 100%; height: auto; display: block; background: #fff; }
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--muted);
+  font-size: 14px;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .placeholder { animation: none; } }
+.figure-error { margin: 0; padding: 16px; color: var(--danger); font-size: 14px; }
+.full-size { display: inline-block; margin-top: 8px; font-size: 14px; color: var(--accent); }
+
+.safety { color: var(--muted); font-size: 13px; text-align: center; margin: 32px 0 8px; }

@@ -355,6 +355,21 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 
 
 
+
+### 2026-11-11 - P7-34: React search page (low-confidence notice, figure after text, design pass)
+- **Who:** Mia
+- **Tool:** Claude (code; it read the repository on Mia's PC and wrote the three files there)
+- **What we asked:** take over Clara's search page (P7-24): show a visible notice when `/search` returns `"confidence": "low"` (P7-48, FR-002, UC-02 A3), show the text first and load the figure after it behind a placeholder (UC-02 A4, NFR-001), keep caption, handbook and printed page always visible (BR-002), and a design pass.
+- **What came back:** changes to `frontend/src/App.jsx` (reads `confidence`, amber notice), `ResultCard.jsx` (figure number, handbook and page first, then caption and passage; the image request starts one frame after the text is painted (`requestAnimationFrame`), behind a fixed-size placeholder; uses `thumbnail_url` when present, with a link to the full-size image; a message if the image fails while the caption and page stay visible) and `styles.css` (colour tokens, cards, notice, placeholder, safety note).
+- **What was wrong, and how it was caught:**
+  - `git status`, as seen by Claude, listed about 68 modified files Mia had not touched. They were only Windows line endings (CRLF), seen differently by Claude's shell; `git diff --ignore-cr-at-eol` showed no real change. Caught before committing, so nothing unrelated went into the commit.
+  - Claude wrote temporary `.new` copies of the three files and could not delete them from Mia's PC. Caught in `git status`; deleted by hand, never committed.
+  - Claude could not run `npm run build` on Mia's PC (npm was blocked from its side), so the build was checked on a separate copy outside her PC. It passed there.
+  - `docs/LOCAL_DATA.md` (Clara's restore guide) checked the figures with `select handbook_id ...`, but the column is `document_id`. Caught when the command failed; told Clara, who corrected it.
+  - Merging `main` (with P7-35) into this branch gave a conflict in `docs/AI_LOG.md`, because both branches added an entry at the end. Expected; resolved by keeping both entries. `App.jsx` merged automatically and keeps both the low-confidence notice and the P7-35 401 check.
+- **How we checked it:** after restoring Clara's database dump and figures (docs/LOCAL_DATA.md) and merging `main` (P7-35): full suite 305 passed (Mia, 11 Nov). In the browser, logged in as a Learner: "What are the four forces acting on an aircraft?" returns Figure 4-3 (Instrument Flying Handbook, page 4-3) with the badge, handbook, page, caption and passage above the image, the thumbnail, and an "Open full-size figure" link; "best pizza in Beirut" shows the no-answer message. With Chrome's 3G throttling and the cache disabled, the text appears first and the figure replaces the "Loading figure…" placeholder . Low-confidence notice: [not triggered by any of the questions tried].
+- **What we could NOT verify:** [if the notice was not triggered: whether the notice appears in practice, since it depends on `LOW_CONFIDENCE_BELOW`, still a provisional value (P7-48)]. NFR-001 asks for the first results page in under 5 s on 3G; the 3G test above is one manual try in Chrome, not a measurement on a real phone.
+- **Commit / PR:** branch `feature/P7-34-react-search-page` (commit c0932a7, then a merge of `main`)
 ### 2026-11-11 - P7-35: login with JWT, Learner/Admin roles checked on the server
 - **Who:** Mia
 - **Tool:** Claude (design, code, tests; it read the repository on Mia's PC and ran the tests in a separate copy)
