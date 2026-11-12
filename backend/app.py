@@ -1,4 +1,4 @@
-"""FastAPI app: POST /login, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
+"""FastAPI app: POST /login, POST /flags, GET /admin/flags, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
 GET /figures/{id}/page-image, GET /health,
 and the React page at /
 (the built files in frontend/dist; create them with: cd frontend && npm run build).
@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend import auth, retrieval
+from backend import auth, flags, retrieval
 from backend.answer import generate_answer
 from backend.query_log import elapsed_ms, log_query
 from backend.retrieval import image_path_for, page_image_path_for, retrieve, thumbnail_path_for
@@ -101,6 +101,35 @@ def admin_ping(user=Depends(auth.require_admin)):
     # Placeholder admin route proving the server-side role check (BR-003) until the admin
     # screens exist (week 5+). A Learner gets 403 here.
     return {"status": "ok", "role": user["role"]}
+
+
+class FlagBody(BaseModel):
+    figure_id: int = Field(ge=1)                      # the database id of a returned figure
+    query: str = Field(min_length=1, max_length=500)  # the question it was returned for
+    reason: str | None = Field(default=None, max_length=500)
+
+
+@app.post("/flags", status_code=201)
+def flag_figure(body: FlagBody, response: Response, user=Depends(auth.current_user)):
+    # UC-03: a Learner (or Admin) reports a returned figure as wrong; it goes to the QA queue.
+    query = body.query.strip()
+    if not query:
+        raise HTTPException(status_code=422, detail="query must not be blank")
+    result = flags.save_flag(body.figure_id, user["id"], query, flags.clean_reason(body.reason))
+    if result == flags.UNKNOWN_FIGURE:
+        raise HTTPException(status_code=404, detail="figure not found")
+    if result == flags.UNKNOWN_USER:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if result == flags.DUPLICATE:          # UC-03 A1: already reported, nothing new stored
+        response.status_code = 200
+        return {"status": "already_reported"}
+    return {"status": "reported"}
+
+
+@app.get("/admin/flags")
+def admin_flags(user=Depends(auth.require_admin)):
+    # The open reports for the QA queue page (FR-003). Admins only (403 for a Learner).
+    return {"flags": flags.open_flags()}
 
 
 @app.get("/search", dependencies=[Depends(auth.current_user)])

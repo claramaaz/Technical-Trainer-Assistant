@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { ADMIN_PAGES } from "./adminPages.js";
+import QaQueue from "./QaQueue.jsx";
+import "./qa.css";
 
 // The admin screens (P7-36). The menu is shown by AuthGate only to Admin accounts, but that is
 // a convenience: before showing anything, this component asks the SERVER (GET /admin/ping,
@@ -37,6 +39,7 @@ export default function AdminArea({ route, onSessionExpired }) {
     );
 
   const page = ADMIN_PAGES.find((p) => p.path === route);
+  if (page?.path === "/admin/qa") return <QaQueue page={page} onSessionExpired={onSessionExpired} />;
   return page ? <AdminPage page={page} /> : <AdminOverview />;
 }
 

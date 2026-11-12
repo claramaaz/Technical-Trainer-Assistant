@@ -29,7 +29,7 @@ export const ADMIN_PAGES = [
       "Correct its caption, page or reference, edit its tags, or remove it",
       "See who changed what and when",
     ],
-    empty: "The queue is not connected yet. Flagged and unbound figures will appear here.",
+    empty: "When a learner presses \"Wrong figure\" on a search result, the figure appears here with the question it was returned for. Low-confidence and unbound figures will be added later.",
   },
   {
     path: "/admin/coverage",

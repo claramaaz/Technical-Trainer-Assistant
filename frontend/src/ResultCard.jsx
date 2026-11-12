@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import WrongFigure from "./WrongFigure.jsx";
 
 // One search result: caption, handbook name + printed page, source passage, then the figure.
 // React escapes all text, so handbook text is never parsed as HTML.
@@ -7,7 +8,7 @@ import { useEffect, useState } from "react";
 // starts after the text has been painted, and a placeholder of the same size keeps the layout
 // from jumping. The small thumbnail is used when the server has one; the full image stays
 // one tap away. BR-002: caption, handbook and page stay visible even if the image fails.
-export default function ResultCard({ result }) {
+export default function ResultCard({ result, query, onSessionExpired }) {
   const [startImage, setStartImage] = useState(false);
   const [imageState, setImageState] = useState("loading"); // loading | loaded | failed
 
@@ -56,6 +57,9 @@ export default function ResultCard({ result }) {
           Open full-size figure
         </a>
       )}
+
+      {/* P7-38 (UC-03): shown even if the image failed, so a broken figure can be reported. */}
+      <WrongFigure figureId={result.id} query={query} onSessionExpired={onSessionExpired} />
     </article>
   );
 }

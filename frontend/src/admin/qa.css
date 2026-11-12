@@ -1,0 +1,29 @@
+/* QA queue list (P7-38). */
+.qa-note { color: #555; margin: 0 0 12px; }
+.qa-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.qa-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #d6d9de;
+  border-radius: 10px;
+  background: #fff;
+}
+.qa-thumb {
+  width: 120px;
+  height: 90px;
+  object-fit: contain;
+  background: #f4f5f7;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.qa-body { min-width: 0; font-size: 14px; }
+.qa-body p { margin: 0 0 4px; overflow-wrap: anywhere; }
+.qa-source { color: #555; }
+.qa-caption { font-weight: 600; font-size: 15px; }
+.qa-label { font-weight: 600; }
+.qa-meta { color: #666; font-size: 13px; }
+@media (max-width: 480px) {
+  .qa-item { flex-direction: column; }
+  .qa-thumb { width: 100%; height: 160px; }
+}

@@ -397,3 +397,16 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **How we checked it:** the frontend builds (checked by Claude outside Mia's PC, as npm is blocked from its side). In the browser: [Admin lands on the overview with the menu; each page opens; a Learner sees no menu and gets "The admin pages are only for Admin accounts" at #/admin/coverage; the menu scrolls on a phone-sized screen].
 - **What we could NOT verify:** there are no automated tests for the React pages in this project; the checks above are manual.
 - **Commit / PR:** branch `feature/P7-36-admin-layout`
+
+### 2026-11-12 - P7-38: "Wrong figure" button (stores the flag, adds the figure to the QA queue)
+- **Who:** Mia
+- **Tool:** Claude (design, code, tests; it wrote the files on Mia's PC and ran the API tests in a separate copy)
+- **What we asked:** UC-03 / FR-003: a learner reports a returned figure as wrong, with an optional reason; the report is stored with the figure, the question, the user and the time, and the figure appears in the admin QA queue; no duplicate when the same learner reports the same figure for the same question (A1).
+- **What came back:** migration `008_figure_flags.sql` (unique index on figure + user + lower(trimmed question)); `backend/flags.py`; `POST /flags` (201 reported, 200 already reported, 404 unknown figure) and `GET /admin/flags` (Admins only) in `backend/app.py`; `WrongFigure.jsx` under each result; the report uses the question that produced the results, not the text being typed; `QaQueue.jsx` lists the open reports; `tests/test_flags.py` (24 tests).
+- **What was wrong, and how it was caught:**
+  - Claude first wanted to start the branch from `main` while P7-34 (which rewrote `ResultCard.jsx`) was not merged: the button would have been built on the old card and the two PRs would have conflicted. Caught before writing code; Clara merged P7-34 first.
+  - `git pull` failed because `.gitignore` had a local change (`dumps/`), so the first P7-38 branch was created from the old `main`. Caught by reading the error and the `git log`; the local line was dropped (Clara's `main` adds the same line), the branch deleted and recreated.
+  - Claude could not run the 7 database tests (no PostgreSQL in its sandbox); they were run on Mia's PC.
+- **How we checked it:** `test_flags.py` 24 passed and the full suite 329 passed (Mia, 12 Nov). In the browser: as a Learner, "Wrong figure" with a reason shows the confirmation; reporting the same figure again for the same question shows "already reported"; as an Admin, the QA queue lists the report with figure 5-2, handbook, page, question, reason, reporter and time, and counts 1 open report.
+- **Known limitations:** if the session expired, the learner is sent to the login page and must report again (UC-03 A2 not fully implemented); reloading a handbook (`load_db.py --reset`) deletes its figures and their reports; admins cannot correct or close a report yet (UC-04).
+- **Commit / PR:** branch `feature/P7-38-wrong-figure`
