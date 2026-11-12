@@ -14,6 +14,7 @@ export default defineConfig({
       "/login": backend,
       "/logout": backend,
       "/me": backend,
+      "/flags": backend,
       "/admin": backend,
     },
   },
