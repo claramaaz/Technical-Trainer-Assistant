@@ -398,6 +398,20 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **What we could NOT verify:** there are no automated tests for the React pages in this project; the checks above are manual.
 - **Commit / PR:** branch `feature/P7-36-admin-layout`
 
+
+### 2026-11-12 - LLM refusal on a weak match becomes "no answer" (FR-002 fix)
+- **Who:** Clara
+- **Tool:** Claude (diagnosis, code, tests; it wrote the files on Clara's PC and ran the tests that need no database in a separate copy)
+- **What we asked:** why "what is the salary of an airline pilot" shows a figure instead of "no answer", and whether the system prompt had to change.
+- **What came back:** the prompt was not the cause: rule 8 already makes the LLM return no sentence, but `generate_answer` turned that refusal into the extractive answer (the defect noted in EVALUATION 3.6 for Q046/Q047). Change in `backend/answer.py` (refusal + low confidence -> `no_answer`), `backend/app.py` (`/answer` returns no figure in that case and logs it as `no_answer`), `evaluation/prompt_eval.py` (passes the confidence, lists answerable questions refused by the rule); 6 new tests, 3 fake functions in older tests adapted to the new argument.
+- **What was wrong, and how it was caught:**
+  - The first plan was "LLM refusal = no answer" in every case. Before writing the code, Claude compared the 10 Nov prompt run with the 11 Nov ranking: the LLM also refuses Q036 and Q011, whose expected figure is in the top 5 (Q036 ranked 1). The rule was limited to low-confidence matches (EVALUATION 3.8).
+  - Clara first thought the system prompt had to be rewritten; reading the prompt and the code showed the prompt already asked for the refusal and the code ignored it.
+- **How we checked it:** full suite 313 passed (Clara, 12 Nov, local database). Re-measured on the 50 questions (`2026-11-12-refusal`): no-answer questions 8/8 (before 6/8); answerable questions turned into no answer: Q031, Q032, both checked in `ranked.csv` to have no expected figure in the top 5.
+- **What we could NOT verify:** one LLM run only; the 0.70 threshold is provisional and chosen on the same set; not visible in the app until the search page calls `/answer`.
+- **Commit / PR:** branch `fix/llm-refusal-no-answer`
+
+
 ### 2026-11-12 - P7-38: "Wrong figure" button (stores the flag, adds the figure to the QA queue)
 - **Who:** Mia
 - **Tool:** Claude (design, code, tests; it wrote the files on Mia's PC and ran the API tests in a separate copy)

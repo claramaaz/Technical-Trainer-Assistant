@@ -113,7 +113,8 @@ def run_once(query, found, settings, llm=None, http=None):
         raw.append(text)           # kept so the sentences the LLM returned can be counted
         return text
 
-    out = answer.generate_answer(query, found["results"], found["reason"], llm=spy, settings=settings)
+    out = answer.generate_answer(query, found["results"], found["reason"], llm=spy, settings=settings,
+                                 confidence=found.get("confidence"))
     returned = kept = numeric_dropped = 0
     if raw:
         try:
@@ -161,6 +162,10 @@ def summarize(rows, questions):
         "modes": dict(Counter(r["mode"] for r in rows)),
         "no_answer_runs": len(na_rows),
         "correct_refusals": sum(1 for r in na_rows if r["mode"] == "no_answer"),
+        # answerable questions that the LLM-refusal rule turned into "no answer" (answer.py rule 4)
+        "answerable_refused_by_llm": sorted({r["question_id"] for r in rows
+                                             if r["question_id"] not in no_answer_ids
+                                             and r["fallback_reason"] == "llm_refused_low_confidence"}),
         "llm_said_nothing": sum(1 for r in na_rows if r in empty_rows and int(r["returned"]) == 0),
         "stable": len(stable), "stable_of": len(comparable),
         "unstable": sorted(set(comparable) - set(stable)),
@@ -202,7 +207,9 @@ def summary_text(name, prompt, s, meta):
              f"{pct(s['stable'], s['stable_of'])} |",
              f"| Correct refusals on no-answer questions (mode no_answer, per run) | "
              f"{pct(s['correct_refusals'], s['no_answer_runs'])} |",
-             f"| No-answer runs where the LLM itself returned no sentence | {s['llm_said_nothing']} |", "",
+             f"| No-answer runs where the LLM itself returned no sentence | {s['llm_said_nothing']} |",
+             f"| Answerable questions turned into no answer by the LLM refusal (low confidence) | "
+             f"{', '.join(s['answerable_refused_by_llm']) or 'none'} |", "",
              "Fallbacks (reported separately; they are not LLM answers):", "",
              "| Measure | Result |", "| --- | --- |",
              f"| Extractive fallbacks (rows) | {s['extractive']} ({reasons}) |",

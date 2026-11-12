@@ -1,6 +1,7 @@
 """Answer layer (P7-25, P7-27): a short answer made ONLY from the retrieved passages, each sentence cited.
 
-generate_answer(query, results) -> {"mode": "llm" | "extractive" | "no_answer",
+generate_answer(query, results, reason=None, confidence=None)
+    -> {"mode": "llm" | "extractive" | "no_answer",
                                     "sentences": [{"text": str, "citations": [passage ids]}],
                                     "fallback_reason": None | str}
 
@@ -10,7 +11,13 @@ What protects the reader (FR-002, BR-004):
   1. no_adequate_answer from retrieval -> the LLM is never called (mode "no_answer").
   2. A sentence with no citation, or citing an id that was not given, is removed.
   3. Numeric guard: a sentence with a number that is not in the passages it cites is removed.
-  4. If nothing is left, or the LLM fails (timeout, HTTP error, bad JSON, no key): the extractive
+  4. The LLM returns NO sentence (prompt rule 8: no passage is about the question) AND retrieval
+     marked the match as low confidence -> mode "no_answer", reason "llm_refused_low_confidence".
+     FR-002 / UC-02 A1: a clear "no answer" instead of a weak match. Rule chosen from our own
+     measures (EVALUATION 3.6): every question the LLM refused with a score under 0.70 was a
+     no-answer question or had no correct figure in the top 5; the refused questions with a
+     correct figure all scored 0.70 or more. So a refusal on a high-confidence match keeps the figure.
+  5. If nothing is left, or the LLM fails (timeout, HTTP error, bad JSON, no key): the extractive
      answer = the retrieved passages word for word, each sentence with its passage id.
 
 Settings come from the environment or .env: LLM_PROVIDER, LLM_BASE_URL, LLM_MODEL, LLM_API_KEY.
@@ -145,16 +152,20 @@ def keep_valid(sentences, results):
     return kept
 
 
-def generate_answer(query, results, reason=None, llm=None, settings=None):
-    """See the module docstring. llm(query, results, settings) -> text can be replaced (tests use a fake)."""
+def generate_answer(query, results, reason=None, llm=None, settings=None, confidence=None):
+    """See the module docstring. llm(query, results, settings) -> text can be replaced (tests use a fake).
+    confidence: "high" or "low", as retrieve() returns it (None = unknown, treated as high)."""
     if reason == NO_ANSWER or not results:
         return {"mode": "no_answer", "sentences": [], "fallback_reason": None}
     settings = load_settings() if settings is None else settings
     try:
         content = (llm or call_llm)(query, results, settings)
-        kept = keep_valid(parse_sentences(content), results)
+        sentences = parse_sentences(content)
     except LLMFailure as failure:
         return extractive_answer(results, str(failure))
+    if not sentences and confidence == "low":
+        return {"mode": "no_answer", "sentences": [], "fallback_reason": "llm_refused_low_confidence"}
+    kept = keep_valid(sentences, results)
     if not kept:
         return extractive_answer(results, "no_valid_sentences")
     return {"mode": "llm", "sentences": kept, "fallback_reason": None}
