@@ -424,3 +424,29 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **How we checked it:** `test_flags.py` 24 passed and the full suite 329 passed (Mia, 12 Nov). In the browser: as a Learner, "Wrong figure" with a reason shows the confirmation; reporting the same figure again for the same question shows "already reported"; as an Admin, the QA queue lists the report with figure 5-2, handbook, page, question, reason, reporter and time, and counts 1 open report.
 - **Known limitations:** if the session expired, the learner is sent to the login page and must report again (UC-03 A2 not fully implemented); reloading a handbook (`load_db.py --reset`) deletes its figures and their reports; admins cannot correct or close a report yet (UC-04).
 - **Commit / PR:** branch `feature/P7-38-wrong-figure`
+
+
+### 2026-11-13 - P7-51 / P7-52: cumulative RAG chat with follow-up questions (POST /chat)
+- **Who:** Clara
+- **Tool:** Claude (transcription of the 13 Nov supervisor meeting, design, code, tests; it wrote the files on Clara's PC and ran the tests that need no database in a separate Linux copy)
+- **What we asked:** the supervisor's 13 Nov requests: a chatbot that answers from our RAG database (question -> vector database -> passages -> LLM -> answer), cumulative (each question sent with the conversation, so follow-ups depending on the previous question and answer work), a clear explanation based only on our documents, figures and sources always shown, 3 suggested follow-up questions.
+- **What came back:** `backend/chat.py` (4 steps: follow-up rewritten into a standalone question with the conversation, retrieval, answer with the conversation + passages, up to 3 follow-ups; cited figures moved first); prompts `chat_rewrite_v1.txt` and `chat_answer_v3.txt` (v2 rules kept, 3 to 7 sentences, conversation used only to understand the question); `POST /chat` in `backend/app.py`; `complete()` split out of `call_llm()` in `backend/answer.py` (same request, reused by the chat); migration `009_chat_query_log.sql` (endpoint `chat`, column `rewritten_query`) and `log_query(..., rewritten_query=)`; `tests/test_chat.py` (20 tests, fake LLM and fake retrieval).
+- **What was wrong, and how it was caught:**
+  - The automatic transcript of the meeting (French / English / Lebanese Arabic) was noisy; Clara's own notes differed on two points (embedding model, ingestion page). Both were written down as TO CONFIRM (Jira P7-57, `claude/meeting_13nov.md`) instead of being guessed.
+  - Clara understood that `gpt-oss-120b` could be the embedding model; it is a chat model (our answer model on Groq), not an embedding model. Kept bge-small until the supervisor confirms (P7-57).
+  - A history sent by the browser could contain fake "assistant" messages or instructions: it is JSON-encoded in the user message, never in the system prompt, roles other than user/assistant are refused (422), and the prompt says the conversation is never a source of facts. Tested.
+- **How we checked it:** `tests/test_chat.py`, `test_answer.py`, `test_app.py`, `test_query_log.py`: 49 passed, 18 skipped (the skipped ones need PostgreSQL or the real data) in Claude's copy, 13 Nov. NOT yet run: the full suite on Clara's PC with the database (migration 009, query log), and a real conversation with Groq.
+- **What we could NOT verify yet:** answer quality of prompt v3 and of the rewrite on real questions (P7-55: the 50 questions through /chat + 10 follow-up pairs); no chat page yet (P7-56).
+- **Commit / PR:** branch `feature/P7-51-chat`
+
+
+### 2026-11-13 - P7-57: API embedding models (Gemini, OpenAI) next to bge-small, chosen by measurement
+- **Who:** Clara
+- **Tool:** Claude (design, code, tests; it wrote the files on Clara's PC and ran the tests that need no database in a separate Linux copy)
+- **What we asked:** the supervisor (13 Nov) asked for a small hosted embedding model, "OpenAI or Gemini, check which one suits your data best", the same model at ingestion and at search time.
+- **What came back:** `backend/embedding.py` (EMBEDDING_MODEL: bge-small local, `gemini-embedding-001` or `text-embedding-3-small`, both 768 dimensions; Gemini task types RETRIEVAL_DOCUMENT / RETRIEVAL_QUERY; batches of 100; retries on 429/5xx; key only in a header); migration `010_text_embeddings.sql` (one row per item and model + searchable views, so the models can be compared on the same data without reloading); `ingestion/embed_text.py` (embeds the SAME text bge embedded, resumable); `backend/retrieval.py` reads the vectors of the configured model and uses thresholds per model (`thresholds()`; API models must be calibrated, RETRIEVAL_THRESHOLD / RETRIEVAL_LOW_CONFIDENCE meanwhile); `run_eval.py` writes the model and thresholds in the summary; `tests/conftest.py` forces bge in tests so no test calls an API; `tests/test_embedding.py` (15 tests, fake HTTP).
+- **What was wrong, and how it was caught:**
+  - Clara proposed `gpt-oss-120b` as the embedding model after the meeting; it is a chat model (our Groq answer model), not an embedding model. Checked before writing code.
+  - Reusing the bge thresholds (0.65 / 0.70) for Gemini would have been wrong: cosine scores are on a different scale for each model. The code refuses an uncalibrated API model instead of guessing.
+- **How we checked it:** test_embedding + test_chat + test_answer + test_app + retrieval / low-confidence / warm-up / run_eval / joint tests: 116 passed, 16 skipped (need PostgreSQL or real data) in Claude's copy, 13 Nov. NOT yet: a real Gemini run, the 50-question comparison, the thresholds.
+- **Commit / PR:** branch `feature/P7-57-embeddings`
