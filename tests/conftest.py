@@ -32,6 +32,10 @@ def bge_text_model_unless_a_test_chooses(monkeypatch):
     monkeypatch.setenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
     monkeypatch.delenv("RETRIEVAL_THRESHOLD", raising=False)
     monkeypatch.delenv("RETRIEVAL_LOW_CONFIDENCE", raising=False)
+    from backend import answer, retrieval
+    monkeypatch.setattr(retrieval, "QUERY_CACHE", None)     # never the developer's cache file
+    monkeypatch.setattr(retrieval, "_query_cache", None)
+    monkeypatch.setattr(answer, "_sleep", lambda seconds: None)  # no real wait on a fake 429
 
 
 def pytest_configure(config):

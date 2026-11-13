@@ -176,3 +176,36 @@ def test_embed_target_embeds_the_stored_text_in_batches():
     assert embed_target(conn, "figures", GEMINI, embed=fake, batch=2, report=lambda _m: None) == 5
     assert [len(t) for _m, t, _k in calls] == [2, 2, 1] and all(k == "document" for _m, _t, k in calls)
     assert [(fid, model) for fid, model, _v in conn.inserted] == [(i, GEMINI) for i in range(1, 6)]
+
+
+def test_api_failure_falls_back_to_bge_for_that_search(monkeypatch):
+    # The live system keeps answering when Gemini is down or out of quota (P7-57, reliability).
+    monkeypatch.setenv("EMBEDDING_MODEL", GEMINI)
+    monkeypatch.setattr(retrieval, "MODEL_THRESHOLDS", {GEMINI: (0.64, 0.66)})
+
+    def no_quota(*a):
+        raise EmbeddingError("embedding API failed: HTTP 429")
+    monkeypatch.setattr(embedding, "embed_api", no_quota)
+    monkeypatch.setattr(retrieval, "_model", lambda: type("M", (), {"encode": lambda self, t, **k: np.ones((1, 384))})())
+    seen = []
+
+    def fake_rank_query(index, query, vector, k, handbooks, mode, reformulated):
+        seen.append((retrieval.text_model(), len(vector), retrieval.thresholds()))
+        return [], None
+    monkeypatch.setattr(retrieval, "rank_query", fake_rank_query)
+    out = retrieval.retrieve("what is a pitot tube", index=object(), mode="text")
+    assert seen == [(embedding.LOCAL_MODEL, 384, (retrieval.THRESHOLD, retrieval.LOW_CONFIDENCE_BELOW))]
+    assert out["embedding_fallback"] == embedding.LOCAL_MODEL and out["reason"] == retrieval.NO_ANSWER
+    assert retrieval.text_model() == GEMINI       # only that search used bge
+
+
+def test_question_vectors_are_cached_on_disk(monkeypatch, tmp_path):
+    monkeypatch.setenv("EMBEDDING_MODEL", GEMINI)
+    monkeypatch.setattr(retrieval, "QUERY_CACHE", tmp_path / "cache.jsonl")
+    calls = []
+    monkeypatch.setattr(embedding, "embed_api", lambda m, t, kind: calls.append(t) or np.full((1, 768), 0.5))
+    first = retrieval.embed_query("q1")
+    monkeypatch.setattr(retrieval, "_query_cache", None)      # a new process reads the file again
+    second = retrieval.embed_query("q1")
+    assert calls == [["q1"]] and np.allclose(first, second)
+

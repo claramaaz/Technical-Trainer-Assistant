@@ -210,8 +210,11 @@ def chat(body: ChatBody):
     found = {"results": turn["results"], "reason": turn["reason"]}
     if "confidence" in turn:
         found["confidence"] = turn["confidence"]
-    log_query("chat", message, elapsed_ms(start), found=found, answer_mode=turn["answer"]["mode"],
-              rewritten_query=turn["question"] if turn["question"] != message else None)
+    # query_id: the row of this question in query_log, so the page can send a good / bad rating for
+    # this answer (P7-53). None when the log could not be written (the answer is still returned).
+    turn["query_id"] = log_query("chat", message, elapsed_ms(start), found=found,
+                                 answer_mode=turn["answer"]["mode"],
+                                 rewritten_query=turn["question"] if turn["question"] != message else None)
     return turn
 
 

@@ -143,3 +143,25 @@ def test_log_failure_does_not_break_the_search(monkeypatch):
     monkeypatch.setattr(app_module, "retrieve", fake_retrieve(TWO_RESULTS))
     r = client.get("/search", params={"q": "four forces"})
     assert r.status_code == 200 and r.json() == TWO_RESULTS
+
+
+def test_chat_question_is_logged_with_the_searched_question_and_returns_its_id(log_db, monkeypatch):
+    # P7-51 + P7-53: the follow-up is logged as typed, with the standalone question that was searched,
+    # and the response carries the row id so the answer can be rated.
+    turn = {"question": "what happens if the pitot tube is blocked", "follow_ups": [], "rewrite_fallback": None,
+            "answer": {"mode": "llm", "sentences": [], "fallback_reason": None},
+            "results": TWO_RESULTS["results"], "reason": None, "confidence": "high"}
+    monkeypatch.setattr(app_module, "chat_turn", lambda m, h, k: turn)
+    r = client.post("/chat", json={"message": "and if it is blocked?",
+                                   "history": [{"role": "user", "content": "what is a pitot tube"}]})
+    assert r.status_code == 200
+    log_db.commit()
+    row = log_db.execute("SELECT id, endpoint, query, rewritten_query, outcome, answer_mode FROM query_log").fetchone()
+    assert row == (r.json()["query_id"], "chat", "and if it is blocked?",
+                   "what happens if the pitot tube is blocked", "answered", "llm")
+
+
+def test_disabled_log_returns_no_id(monkeypatch):
+    monkeypatch.setattr(query_log, "ENABLED", False)
+    assert query_log.log_query("chat", "q", 5) is None
+

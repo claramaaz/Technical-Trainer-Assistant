@@ -178,9 +178,9 @@ def test_chat_route_returns_the_turn_and_logs_the_searched_question(monkeypatch)
             "rewrite_fallback": None}
     seen, logged = [], []
     monkeypatch.setattr(app_module, "chat_turn", lambda m, h, k: seen.append((m, h, k)) or turn)
-    monkeypatch.setattr(app_module, "log_query", lambda *a, **kw: logged.append((a, kw)))
+    monkeypatch.setattr(app_module, "log_query", lambda *a, **kw: logged.append((a, kw)) or 321)
     r = TestClient(app).post("/chat", json={"message": " and what opposes it? ", "history": HISTORY})
-    assert r.status_code == 200 and r.json() == turn
+    assert r.status_code == 200 and r.json() == dict(turn, query_id=321)
     assert seen == [("and what opposes it?", HISTORY, 5)]
     (args, kwargs), = logged
     assert args[:2] == ("chat", "and what opposes it?")

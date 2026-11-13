@@ -166,3 +166,23 @@ def test_passages_reach_the_llm_as_json_data_not_as_instructions():
 
 def test_number_normalisation():
     assert answer.numbers_in("1,000 and 1000 and 2.5 [748]") == {"1000", "2.5"}
+
+
+def test_groq_rate_limit_is_waited_for_and_retried(monkeypatch):
+    # Groq free tier: 8,000 tokens per minute. A 429 is retried after the Retry-After time (P7-55 run).
+    waits, answers = [], [429, 200]
+
+    class Resp:
+        def __init__(self, status):
+            self.status_code, self.headers = status, {"retry-after": "7"}
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": '{"sentences": []}'}}]}
+    monkeypatch.setattr(answer.httpx, "post", lambda *a, **k: Resp(answers.pop(0)))
+    monkeypatch.setattr(answer, "_sleep", waits.append)
+    assert answer.complete([{"role": "user", "content": "x"}], SETTINGS) == '{"sentences": []}'
+    assert waits == [7.0] and answers == []
+

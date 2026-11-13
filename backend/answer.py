@@ -26,6 +26,7 @@ The key is only sent in the Authorization header; it is never printed, logged or
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import httpx
@@ -35,6 +36,9 @@ from migrate import read_env_file  # the folder is added to sys.path by backend.
 
 PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "answer_system_v2.txt"  # v2 kept after P7-26 (EVALUATION 3.6)
 TIMEOUT_SECONDS = 10
+RATE_LIMIT_RETRIES = 2        # Groq free tier: 30 requests and 8,000 tokens per minute
+MAX_WAIT_SECONDS = 20
+_sleep = time.sleep           # replaced in tests
 SETTINGS = ("LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY")
 
 NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
@@ -102,8 +106,17 @@ def complete(messages, settings):
     }
     url = settings["LLM_BASE_URL"].rstrip("/") + "/chat/completions"
     try:
-        response = httpx.post(url, json=body, timeout=TIMEOUT_SECONDS,
-                              headers={"Authorization": "Bearer " + settings["LLM_API_KEY"]})
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            response = httpx.post(url, json=body, timeout=TIMEOUT_SECONDS,
+                                  headers={"Authorization": "Bearer " + settings["LLM_API_KEY"]})
+            if response.status_code != 429 or attempt == RATE_LIMIT_RETRIES:
+                break
+            # Rate limit: wait as long as Groq asks (Retry-After, seconds), at most MAX_WAIT_SECONDS.
+            try:
+                wait = float(response.headers.get("retry-after", 5))
+            except ValueError:
+                wait = 5.0
+            _sleep(min(max(wait, 1.0), MAX_WAIT_SECONDS))
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
     except httpx.TimeoutException:

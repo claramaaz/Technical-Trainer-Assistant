@@ -464,3 +464,23 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **Known limitations:** a handbook whose load step already ran cannot be re-uploaded from the page (409) until it is removed by hand; no progress inside a step (only step i of n); the upload page itself is Mia's ticket P7-40.
 - **Commit / PR:** branch `feature/P7-51-chat`
 
+
+### 2026-11-13 - /chat returns the query id (for P7-53) and the chat evaluation script (P7-55)
+- **Who:** Clara
+- **Tool:** Claude (code, tests, draft of the 10 follow-up pairs; it wrote the files on Clara's PC and ran the tests that need no database in a separate Linux copy)
+- **What we asked:** (1) Mia's good / bad buttons (P7-53) need to know which answer is rated; (2) measure the chat, and especially whether the cumulative history makes follow-up questions work.
+- **What came back:** (1) `log_query` returns the new `query_log.id` (None when not written) and `POST /chat` returns it as `query_id`; tests in `test_chat.py` and `test_query_log.py`. (2) `evaluation/chat_eval.py`: part A = the 50 questions as the first message of a chat (answer modes, no-answer, first figure shown in score order vs cited-first order); part B = `evaluation/chat_followups.csv`, 10 pairs "first question -> follow-up with a pronoun", each follow-up searched with the history (real chat) and without it (search box); `tests/test_chat_eval.py`.
+- **What was wrong, and how it was caught:** the 10 follow-up pairs were drafted by Claude, not by the team; marked "Claude draft (to review)" in the file. Their expected figures are not new judgements: each one is the expected figure of an existing question of the 50 (column `source_question`). They are a small extra set for the chat only, not part of the 50-question evaluation set.
+- **How we checked it:** test_chat_eval + test_chat: 24 passed in Claude's copy. NOT yet: the real run (about 80 Groq calls) and the database test of the query id.
+- **Commit / PR:** branch `feature/P7-51-chat`
+
+
+### 2026-11-13 - Free-tier quotas: retry on Groq 429, bge fallback and cache for Gemini, slower chat evaluation
+- **Who:** Clara
+- **Tool:** Claude (diagnosis from the traceback and the published limits, code, tests)
+- **What happened:** the first chat evaluation run stopped at Q048 with `EmbeddingError: HTTP 429` from Gemini, and 17 of the first 47 answers were "extractive". Diagnosis: free-tier quotas, not a code defect. Gemini free tier: about 1,000 embedding requests per day, and the day had already used 849 figure embeddings + about 150 questions. Groq free tier for gpt-oss-120b: 30 requests and 8,000 tokens per minute, 200,000 tokens per day; with 4 s between questions the run asked about 15 answers a minute (about 37,000 tokens), so Groq refused calls with 429 and the answer fell back to the extractive passages.
+- **What came back:** `answer.complete()` waits for Groq's Retry-After (at most 20 s) and retries twice on 429; `retrieval.retrieve()` uses the stored bge-small vectors and bge's thresholds for that one search when the Gemini call fails (result marked `embedding_fallback`), so a demo does not stop when the quota is reached; question vectors of the API model cached in `data/cache/query_embeddings.jsonl` (not in Git; disabled in tests); `chat_eval.py` waits 20 s between questions, records a failed question as "error" and goes on, and can run part A or B alone (different days). Tests added in `test_embedding.py`, `test_answer.py`, `test_chat_eval.py`.
+- **How we checked it:** 84 passed, 9 skipped in Claude's copy (13 Nov). The full chat run must wait for the quotas to reset.
+- **Open question for the supervisor:** the free tiers limit the demo (about 3 chat answers a minute with Groq). Paid tiers cost cents (Groq pay-as-you-go, Gemini Tier 1) but need a card: TO CONFIRM WITH SUPERVISOR.
+- **Commit / PR:** branch `feature/P7-51-chat`
+

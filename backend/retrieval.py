@@ -34,6 +34,9 @@ bge-small (default, figures.embedding) or an API model (gemini-embedding-001, te
 stored in figure_text_embeddings / chunk_text_embeddings, migration 010). Every model has its own
 thresholds (thresholds()): cosine scores are on a different scale for each model.
 """
+import contextvars
+import json
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -224,15 +227,51 @@ def _model():
     return load_model(MODEL_NAME)
 
 
+# Set only inside retrieve() when the API model failed: that one search uses bge-small instead.
+_model_override = contextvars.ContextVar("text_model_override", default=None)
+
+# Question vectors of an API model already asked, kept on disk (data/ is not in Git): the free tiers
+# limit the requests per day, and the evaluation asks the same 50 questions again and again.
+# None = no cache (tests/conftest.py sets None, so tests never read or write it).
+QUERY_CACHE = ROOT / "data" / "cache" / "query_embeddings.jsonl"
+_query_cache = None
+
+
 def text_model():
-    """The configured text embedding model (EMBEDDING_MODEL; default bge-small). See backend/embedding.py."""
-    return embedding.configured_model()
+    """The text embedding model of this search (EMBEDDING_MODEL; default bge-small). See backend/embedding.py."""
+    return _model_override.get() or embedding.configured_model()
+
+
+def _cache():
+    global _query_cache
+    if _query_cache is None:
+        _query_cache = {}
+        if QUERY_CACHE is not None and QUERY_CACHE.exists():
+            for line in QUERY_CACHE.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    item = json.loads(line)
+                    _query_cache[(item["model"], item["text"])] = item["vector"]
+    return _query_cache
+
+
+def _api_query_vector(model, query):
+    import numpy as np
+    key = (model, query)
+    if QUERY_CACHE is not None and key in _cache():
+        return np.asarray(_cache()[key], dtype=np.float32)
+    vector = embedding.embed_api(model, [query], "query")[0]
+    if QUERY_CACHE is not None:
+        _cache()[key] = vector.tolist()
+        QUERY_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        with open(QUERY_CACHE, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"model": model, "text": query, "vector": vector.tolist()}) + "\n")
+    return vector
 
 
 def embed_query(query):
     model = text_model()
     if embedding.is_api_model(model):
-        return embedding.embed_api(model, [query], "query")[0]
+        return _api_query_vector(model, query)
     return _model().encode([QUERY_PREFIX + query], normalize_embeddings=True)[0]
 
 
@@ -409,7 +448,21 @@ def retrieve(query, k=5, index=None, query_vector=None, handbooks=None, mode=Non
     """
     index = index or load_index()
     if query_vector is None:
-        query_vector = embed_query(query)
+        try:
+            query_vector = embed_query(query)
+        except embedding.EmbeddingError as exc:
+            if _model_override.get() is not None or not embedding.is_api_model(text_model()):
+                raise
+            # NFR reliability: the API model is down or out of quota. This search uses the bge-small
+            # vectors still stored in the database, with bge's thresholds, instead of failing.
+            logging.getLogger("uvicorn.error").warning("embedding API failed (%s): this search uses %s",
+                                                       exc, embedding.LOCAL_MODEL)
+            token = _model_override.set(embedding.LOCAL_MODEL)
+            try:
+                found = retrieve(query, k, index, None, handbooks, mode, reformulated)
+            finally:
+                _model_override.reset(token)
+            return dict(found, embedding_fallback=embedding.LOCAL_MODEL)
     mode = mode or retrieval_mode()
     if mode == "reformulated" and reformulated is None:
         reformulated = _live_reformulation(index, query, query_vector, handbooks)
