@@ -450,3 +450,17 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
   - Reusing the bge thresholds (0.65 / 0.70) for Gemini would have been wrong: cosine scores are on a different scale for each model. The code refuses an uncalibrated API model instead of guessing.
 - **How we checked it:** test_embedding + test_chat + test_answer + test_app + retrieval / low-confidence / warm-up / run_eval / joint tests: 116 passed, 16 skipped (need PostgreSQL or real data) in Claude's copy, 13 Nov. NOT yet: a real Gemini run, the 50-question comparison, the thresholds.
 - **Commit / PR:** branch `feature/P7-57-embeddings`
+
+
+### 2026-11-13 - Gemini thresholds (EVALUATION 4.2) and P7-54: handbook upload by the Admin + background ingestion
+- **Who:** Clara
+- **Tool:** Claude (analysis of the run, code, tests; it wrote the files on Clara's PC and ran the tests that need no database in a separate Linux copy)
+- **What we asked:** (1) choose the Gemini thresholds from the 50-question run and write the bge vs Gemini comparison; (2) the supervisor's request that the Admin uploads the handbooks from the web interface (UC-01, BR-001, BR-003).
+- **What came back:** (1) `MODEL_THRESHOLDS["gemini-embedding-001"] = (0.64, 0.66)` in `backend/retrieval.py`, EVALUATION 4.2 (method, own/all tables, thresholds, limits, decision). (2) `backend/ingest_jobs.py` (form and file checks, PDF stored with its meta.json: source URL, licence, retrieval date, sha256; one job at a time in a background thread; each step = the same script as by hand, in its own process; report from the extractor; jobs cut by a restart marked failed; search index reloaded when a job is done), migration `011_ingestion_jobs.sql`, routes `POST /admin/documents` (202 + job id), `GET /admin/documents`, `GET /admin/ingestion-jobs/{id}` (Admin only), `load_db.py` reads title/URL/licence from the meta.json of an uploaded handbook, `python-multipart` added to requirements, `tests/test_ingest_jobs.py` (fake step runner, no real PDF).
+- **What was wrong, and how it was caught:**
+  - Reusing bge's thresholds for Gemini would have refused correct answers: Gemini's scores are compressed (0.56-0.82). Chosen from the run's scores instead, and written down as provisional (same 50 questions).
+  - Migration numbers: 011 was announced for Mia's feedback table (P7-53); it is now used here, Mia takes the next free number.
+- **How we checked it:** in Claude's copy: test_ingest_jobs + test_app + test_chat + test_embedding: 62 passed, 14 skipped (database tests). NOT yet: the database tests and the full suite on Clara's PC, the run with the Gemini thresholds, a real upload of a third handbook.
+- **Known limitations:** a handbook whose load step already ran cannot be re-uploaded from the page (409) until it is removed by hand; no progress inside a step (only step i of n); the upload page itself is Mia's ticket P7-40.
+- **Commit / PR:** branch `feature/P7-51-chat`
+

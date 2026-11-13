@@ -427,3 +427,38 @@ Questions that moved (own rank of the expected figure, baseline -> rewrite):
 - No-answer accuracy is unchanged, as designed.
 
 **Decision.** Query reformulation is **not** adopted: the live search stays in `text` mode and calls no LLM before retrieval. The result is reported as measured (SRS UC-06 A2). The next candidate for the deliberate improvement targets the cause found here, the stored text of the figures (whole citing sentences at ingestion), measured on the same 50 questions. **TO CONFIRM WITH SUPERVISOR:** whether a measured negative result can count as the deliberate improvement, or whether a second, positive attempt is expected; and whether an LLM may be used before retrieval at all.
+
+
+### 4.2 Experiment 2: embedding model, bge-small vs Gemini (P7-57, supervisor request of 13 Nov)
+
+**Why this experiment.** At the 13 Nov meeting the supervisor asked for a small hosted embedding model, the same at ingestion and at search time, and said that both OpenAI and Gemini were acceptable: "check which one suits your data best". Section 4.1 also showed that the symptom questions fail because their words do not match the stored text; a stronger embedding model is a direct way to close that vocabulary gap.
+
+**Hypothesis.** `gemini-embedding-001` ranks the expected figure higher than `BAAI/bge-small-en-v1.5` on the same 50 questions, especially on symptom questions, without hurting the no-answer path once its thresholds are set. (Recorded here after the meeting decision but before any threshold was chosen; it was not committed before the run.)
+
+**Method.**
+- Same figure documents as bge (caption + first citing paragraph, `figures.search_text`), embedded with `gemini-embedding-001`, 768 dimensions, task type RETRIEVAL_DOCUMENT; questions embedded with task type RETRIEVAL_QUERY (`backend/embedding.py`, `ingestion/embed_text.py`). Vectors stored next to the bge ones (migration 010), so only the model changes. 849 of 849 figures embedded.
+- Same 50 questions, same `text` mode, same automatic rule (expected figure). Run `evaluation/runs/2026-11-13-gemini`, with both thresholds at 0, so every question returns its top 5 and the scores can be read before choosing thresholds.
+- Baseline = `2026-11-11-text` (bge-small, section 4.1).
+
+**Results (automatic rule; Hit@1 / Hit@5 / MRR@5).**
+
+| Questions | Scope | bge-small (`2026-11-11-text`) | Gemini (`2026-11-13-gemini`) |
+| --- | --- | --- | --- |
+| all 42 answerable | own | 0.643 / 0.833 / 0.720 | **0.881 / 0.929 / 0.905** |
+| topic (30) | own | 0.733 / 0.933 / 0.819 | 0.933 / 0.967 / 0.950 |
+| symptom (12) | own | 0.417 / 0.583 / 0.472 | 0.750 / 0.833 / 0.792 |
+| all 42 answerable | all | 0.524 / 0.786 / 0.639 | **0.738 / 0.905 / 0.808** |
+| topic (30) | all | 0.600 / 0.900 / 0.736 | 0.833 / 0.933 / 0.878 |
+| symptom (12) | all | 0.333 / 0.500 / 0.396 | 0.500 / 0.833 / 0.632 |
+
+Still not in the top 5 with Gemini (both scopes): Q006 (15B 4-7), Q030 (25C 17-5), Q032 (25C 5-17). With both handbooks, a figure of the other handbook is often first (Q001, Q004, Q020, Q022, Q033, Q034): the two handbooks cover the same topics.
+
+**Thresholds (PROVISIONAL).** Gemini scores are on another scale than bge and are compressed (top-1 scores about 0.56-0.82), so the bge thresholds (0.65 / 0.70) cannot be reused. All scope top-1 scores: no-answer questions 0.564-0.652 (highest Q025 0.652, then Q047 0.639); lowest correct answerable 0.645 (Q005, Q027). Chosen: **no answer below 0.64, low confidence below 0.66** (`MODEL_THRESHOLDS` in `backend/retrieval.py`). Expected effect on this set: 7/8 no-answer questions refused, no answerable question refused; Q025, Q005, Q027 and Q032 shown with the low-confidence notice, and in the chat the P7-50 rule turns an LLM refusal on a low-confidence match (expected for Q025) into "no answer". Confirmed by the run with these thresholds (`2026-11-13-gemini-t`, 13 Nov): no-answer accuracy 7/8 in both scopes (Q025 answered, with the low-confidence notice), 0/42 answerable questions refused; Hit@1 / Hit@5 / MRR unchanged (thresholds only decide whether to answer).
+
+**Limits.**
+- The thresholds were chosen on the same 50 questions they are tested on (same limit as bge, section 3.5); the margin is very small (0.645 vs 0.652).
+- Automatic rule only; the human judgements (`judgements.csv`, 397 pairs still to judge) are not done yet.
+- Gemini is a hosted API: each question costs one request (free tier) and adds network time; if the API fails, the question fails (no local fallback yet).
+- One run (embeddings are deterministic, so a re-run should give the same ranking).
+
+**Decision.** `gemini-embedding-001` replaces bge-small for ingestion and search (`EMBEDDING_MODEL=gemini-embedding-001`); the answer is still written by Groq `gpt-oss-120b`. bge-small vectors are kept in the database for the comparison. OpenAI `text-embedding-3-small` was not measured (paid account needed); it can be compared the same way with `ingestion/embed_text.py text-embedding-3-small`.

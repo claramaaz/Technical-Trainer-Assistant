@@ -91,7 +91,11 @@ NO_ANSWER = "no_adequate_answer"
 # RETRIEVAL_LOW_CONFIDENCE (environment or .env) must then be given (0 = answer everything, to
 # collect the scores of a first evaluation run).
 MODEL_THRESHOLDS = {
-    "gemini-embedding-001": None,
+    # PROVISIONAL, set on run 2026-11-13-gemini (thresholds 0, EVALUATION 4.2), the same 50 questions they
+    # are tested on. All scope top-1: highest no-answer 0.652 (Q025), then 0.639 (Q047); lowest correct
+    # answerable 0.645 (Q005, Q027). Below 0.64 = no answer; 0.64-0.66 = low confidence (Q025 lands
+    # there, and the P7-50 rule turns an LLM refusal on it into "no answer").
+    "gemini-embedding-001": (0.64, 0.66),
     "text-embedding-3-small": None,
 }
 

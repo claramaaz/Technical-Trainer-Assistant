@@ -1,4 +1,4 @@
-"""FastAPI app: POST /login, POST /chat, POST /flags, GET /admin/flags, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
+"""FastAPI app: POST /login, POST /chat, POST/GET /admin/documents, GET /admin/ingestion-jobs/{id}, POST /flags, GET /admin/flags, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
 GET /figures/{id}/page-image, GET /health,
 and the React page at /
 (the built files in frontend/dist; create them with: cd frontend && npm run build).
@@ -15,12 +15,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend import auth, flags, retrieval
+from backend import auth, flags, ingest_jobs, retrieval
 from backend.answer import generate_answer
 from backend.chat import chat_turn
 from backend.query_log import elapsed_ms, log_query
@@ -49,9 +49,21 @@ def warm_up():
     return True
 
 
+def close_interrupted_jobs():
+    """P7-54: an ingestion job cut by a restart can never finish; mark it failed so the admin sees it."""
+    try:
+        count = ingest_jobs.mark_interrupted()
+    except Exception as exc:
+        log.warning("could not check the ingestion jobs (%s): %s", type(exc).__name__, exc)
+        return
+    if count:
+        log.warning("%d ingestion job(s) were interrupted by the restart and marked failed", count)
+
+
 @asynccontextmanager
 async def lifespan(app):
     warm_up()
+    close_interrupted_jobs()
     yield
 
 
@@ -201,6 +213,35 @@ def chat(body: ChatBody):
     log_query("chat", message, elapsed_ms(start), found=found, answer_mode=turn["answer"]["mode"],
               rewritten_query=turn["question"] if turn["question"] != message else None)
     return turn
+
+
+@app.post("/admin/documents", status_code=202)
+def upload_document(file: UploadFile = File(...), id: str = Form(...), title: str = Form(...),
+                    source_url: str = Form(...), licence: str = Form(...), retrieved_at: str = Form(""),
+                    user=Depends(auth.require_admin)):
+    # P7-54 (UC-01, BR-001, BR-003; supervisor 13 Nov): an Admin uploads a handbook PDF from the
+    # Sources panel. The file is checked and stored, then the ingestion runs in the background:
+    # 202 Accepted with the job id; the page follows the job with GET /admin/ingestion-jobs/{id}.
+    try:
+        job_id = ingest_jobs.save_upload(file.file, id, title, source_url, licence, retrieved_at, user["id"])
+    except ingest_jobs.UploadError as exc:
+        raise HTTPException(status_code=exc.args[1], detail=exc.args[0]) from None
+    ingest_jobs.start(job_id)
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/admin/documents")
+def admin_documents(user=Depends(auth.require_admin)):
+    # The Sources panel (P7-40): every handbook in the database and the recent ingestion jobs.
+    return {"documents": ingest_jobs.list_documents(), "jobs": ingest_jobs.list_jobs()}
+
+
+@app.get("/admin/ingestion-jobs/{job_id}")
+def admin_ingestion_job(job_id: int, user=Depends(auth.require_admin)):
+    job = ingest_jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    return job
 
 
 @app.get("/figures/{figure_id}/image", dependencies=[Depends(auth.current_user)])
