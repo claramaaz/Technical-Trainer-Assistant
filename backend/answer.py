@@ -87,8 +87,9 @@ def build_user_message(query, results):
             + "\n\nQuestion: " + query)
 
 
-def call_llm(query, results, settings):
-    """One request to the OpenAI-compatible chat endpoint. Returns the model's text. Raises LLMFailure."""
+def complete(messages, settings):
+    """One request to the OpenAI-compatible chat endpoint with these messages, JSON output asked.
+    Returns the model's text. Raises LLMFailure. Also used by the chat (backend/chat.py, P7-51)."""
     if not settings.get("LLM_API_KEY"):
         raise LLMFailure("missing_api_key")
     if not settings.get("LLM_BASE_URL") or not settings.get("LLM_MODEL"):
@@ -97,10 +98,7 @@ def call_llm(query, results, settings):
         "model": settings["LLM_MODEL"],
         "temperature": 0,
         "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": PROMPT_FILE.read_text(encoding="utf-8")},
-            {"role": "user", "content": build_user_message(query, results)},
-        ],
+        "messages": messages,
     }
     url = settings["LLM_BASE_URL"].rstrip("/") + "/chat/completions"
     try:
@@ -114,6 +112,14 @@ def call_llm(query, results, settings):
         raise LLMFailure("http_error") from None   # the original message is dropped on purpose
     except (KeyError, IndexError, TypeError, ValueError):
         raise LLMFailure("bad_json") from None
+
+
+def call_llm(query, results, settings):
+    """The /answer request: system prompt v2 + passages + question. Returns the model's text. Raises LLMFailure."""
+    return complete([
+        {"role": "system", "content": PROMPT_FILE.read_text(encoding="utf-8")},
+        {"role": "user", "content": build_user_message(query, results)},
+    ], settings)
 
 
 def parse_sentences(content):

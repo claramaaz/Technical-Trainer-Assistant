@@ -1,4 +1,4 @@
-"""FastAPI app: POST /login, POST /flags, GET /admin/flags, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
+"""FastAPI app: POST /login, POST /chat, POST /flags, GET /admin/flags, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
 GET /figures/{id}/page-image, GET /health,
 and the React page at /
 (the built files in frontend/dist; create them with: cd frontend && npm run build).
@@ -13,6 +13,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse
@@ -21,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from backend import auth, flags, retrieval
 from backend.answer import generate_answer
+from backend.chat import chat_turn
 from backend.query_log import elapsed_ms, log_query
 from backend.retrieval import image_path_for, page_image_path_for, retrieve, thumbnail_path_for
 
@@ -167,6 +169,38 @@ def answer(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, 
     if "confidence" in found:          # same rule as /search: only present when figures are returned
         body["confidence"] = found["confidence"]
     return body
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=4000)
+
+
+class ChatBody(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    history: list[ChatMessage] = Field(default_factory=list, max_length=20)  # earlier turns, oldest first
+    k: int = Field(5, ge=1, le=20)
+
+
+@app.post("/chat", dependencies=[Depends(auth.current_user)])
+def chat(body: ChatBody):
+    # P7-51 (supervisor, 13 Nov 2026): cumulative RAG chat. The browser sends the conversation so far
+    # with every message, so follow-up questions work. See backend/chat.py for the 4 steps.
+    message = body.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="message must not be blank")
+    start = time.perf_counter()
+    try:
+        turn = chat_turn(message, [m.model_dump() for m in body.history], body.k)
+    except Exception as exc:
+        log_query("chat", message, elapsed_ms(start), error=exc)
+        raise
+    found = {"results": turn["results"], "reason": turn["reason"]}
+    if "confidence" in turn:
+        found["confidence"] = turn["confidence"]
+    log_query("chat", message, elapsed_ms(start), found=found, answer_mode=turn["answer"]["mode"],
+              rewritten_query=turn["question"] if turn["question"] != message else None)
+    return turn
 
 
 @app.get("/figures/{figure_id}/image", dependencies=[Depends(auth.current_user)])
