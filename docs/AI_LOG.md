@@ -494,3 +494,9 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **How we checked it:** test_reindex + test_ingest_jobs + test_app + test_chat: 57 passed, 14 skipped (database tests) in Claude's copy, 14 Nov. NOT yet: full suite on Clara's PC and a real re-index (uses about 350-500 Gemini requests per handbook, free tier about 1,000 a day).
 - **Commit / PR:** branch `feature/P7-51-chat`
 
+
+### 14 Nov, caption-binding sample on extractor v6
+- **What Claude did:** drew the 50-figure sample (`sample_check.py draw`, seed 11) and, after Clara judged it, ran `score` and wrote section 1.2 (re-check) of EVALUATION.md.
+- **What Claude did NOT do:** the y/n judgements (caption, page, image) were made by Clara by comparing each image with the PDF.
+- **Result:** 50/50 on caption, page and image completeness (Wilson 95 %: about 93-100 %). Judged file: `evaluation/check_sample_FAA-H-8083-15B_v6_n50.csv`.
+- **Commit / PR:** branch `feature/P7-51-chat`

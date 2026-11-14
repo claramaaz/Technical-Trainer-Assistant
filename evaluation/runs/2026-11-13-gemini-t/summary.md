@@ -9,9 +9,9 @@
 | Scope | Metric rule | Questions | Hit@1 | Hit@5 | MRR@5 |
 | --- | --- | --- | --- | --- | --- |
 | own | auto (expected figure) | 42 | 0.881 | 0.929 | 0.905 |
-| own | human (scored 2) | 0 of 42 judged | n/a | n/a | n/a |
+| own | human (scored 2) | 23 of 42 judged | 1.000 | 1.000 | 1.000 |
 | all | auto (expected figure) | 42 | 0.738 | 0.905 | 0.808 |
-| all | human (scored 2) | 0 of 42 judged | n/a | n/a | n/a |
+| all | human (scored 2) | 23 of 42 judged | 0.870 | 1.000 | 0.928 |
 
 By question type (auto rule):
 

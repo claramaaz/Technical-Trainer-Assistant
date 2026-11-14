@@ -70,6 +70,18 @@ Incomplete images in the sample: 5-39 and 9-21 (caption included in the image), 
 
 With 20 pairs, 20/20 is consistent with a true caption-binding accuracy anywhere from about 84 % to 100 % (95 % Wilson interval); a larger sample would narrow this.
 
+**Re-check on the final extractor (v6), 50 pairs (14 Nov).** Command: `python ingestion/sample_check.py draw FAA-H-8083-15B --n 50 --seed 11`, judged by hand against the PDF, then `... score FAA-H-8083-15B`. Judged sample committed as [`evaluation/check_sample_FAA-H-8083-15B_v6_n50.csv`](../evaluation/check_sample_FAA-H-8083-15B_v6_n50.csv).
+
+| Measure | Result |
+| --- | --- |
+| Sample size / seed | 50 / 11, drawn from the 347 bound figures (extractor v6) |
+| Caption-binding accuracy (caption_correct) | **50/50 = 100 %** |
+| Printed-page correctness (page_correct) | **50/50 = 100 %** |
+| Figure image complete (image_complete) | **50/50 = 100 %** |
+| Judged by / date | Clara, 2026-11-14 |
+
+With 50 pairs, 50/50 is consistent with a true accuracy of about 93 % to 100 % (95 % Wilson interval). The sample covers bound figures only, not the 31 unbound regions. It replaces the v3 sample above as the caption-binding figure for 15B; the 25C half (50 pairs, same seed) is judged by Mia.
+
 ### 1.3 Errors and limitations observed
 
 | Error type | Examples | Cause | Status |
