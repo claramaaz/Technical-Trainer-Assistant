@@ -484,3 +484,13 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **Open question for the supervisor:** the free tiers limit the demo (about 3 chat answers a minute with Groq). Paid tiers cost cents (Groq pay-as-you-go, Gemini Tier 1) but need a card: TO CONFIRM WITH SUPERVISOR.
 - **Commit / PR:** branch `feature/P7-51-chat`
 
+
+### 2026-11-14 - SPEC 1.3 (P7-58) and re-embedding / re-indexing (P7-32)
+- **Who:** Clara
+- **Tool:** Claude (drafting, code, tests; it wrote the files on Clara's PC and ran the tests that need no database in a separate Linux copy)
+- **What we asked:** (1) record the decisions of the 13 Nov supervisor meeting in the SPEC; (2) FR-008 / UC-10 re-indexing and the re-embedding of a corrected figure (UC-04), keeping the previous index when it fails.
+- **What came back:** (1) SPEC 1.3: change log row (chat, rating, web upload, Gemini chosen by measurement, CLIP divergence marked TO CONFIRM WITH SUPERVISOR), 2.5 embedding and language model rows, FR-001, FR-009 (cumulative chat), new FR-010 (rate an answer), UC-01 and UC-02 main flows; version 1.1 in the header corrected (the log already had 1.2). (2) `ingestion/reindex.py` (bge + configured API model, from the stored `figures.search_text`; every vector computed before one write transaction), routes `POST /admin/reindex` (background job, shown with the ingestion jobs) and `POST /admin/figures/{id}/reembed` (for Mia's QA correction, P7-41; 503 when the embedding API fails, nothing written), `tests/test_reindex.py`.
+- **What was wrong, and how it was caught:** the SPEC change-log table was broken by an empty line before row 1.2 (Markdown showed it as a second table); fixed. Chunks are not re-embedded by `reindex.py` (not corrected by the admin, not used by the live text mode): written in its docstring.
+- **How we checked it:** test_reindex + test_ingest_jobs + test_app + test_chat: 57 passed, 14 skipped (database tests) in Claude's copy, 14 Nov. NOT yet: full suite on Clara's PC and a real re-index (uses about 350-500 Gemini requests per handbook, free tier about 1,000 a day).
+- **Commit / PR:** branch `feature/P7-51-chat`
+

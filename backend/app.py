@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend import auth, flags, ingest_jobs, retrieval
+from backend import auth, embedding, flags, ingest_jobs, retrieval
 from backend.answer import generate_answer
 from backend.chat import chat_turn
 from backend.query_log import elapsed_ms, log_query
@@ -237,6 +237,38 @@ def upload_document(file: UploadFile = File(...), id: str = Form(...), title: st
 def admin_documents(user=Depends(auth.require_admin)):
     # The Sources panel (P7-40): every handbook in the database and the recent ingestion jobs.
     return {"documents": ingest_jobs.list_documents(), "jobs": ingest_jobs.list_jobs()}
+
+
+class ReindexBody(BaseModel):
+    handbook_id: str = Field("ALL", min_length=1, max_length=60)   # one handbook id, or "ALL"
+
+
+@app.post("/admin/reindex", status_code=202)
+def admin_reindex(body: ReindexBody, user=Depends(auth.require_admin)):
+    # P7-32 (FR-008, UC-10): rebuild the figure vectors of one handbook or of all, in the background.
+    # All vectors are computed before anything is written, so a failure keeps the previous index.
+    handbook_id = body.handbook_id.strip()
+    try:
+        job_id = ingest_jobs.create_reindex_job(handbook_id, user["id"])
+    except ingest_jobs.UploadError as exc:
+        raise HTTPException(status_code=exc.args[1], detail=exc.args[0]) from None
+    ingest_jobs.start(job_id, todo=ingest_jobs.reindex_steps(handbook_id))
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.post("/admin/figures/{figure_id}/reembed")
+def admin_reembed_figure(figure_id: int, user=Depends(auth.require_admin)):
+    # P7-32 (UC-04): after an admin corrects a figure (QA queue, P7-41), its vectors are recomputed from
+    # its stored text, so the next searches use the correction. Synchronous: one figure is quick.
+    import reindex   # ingestion/reindex.py (the folder is on sys.path, see backend/retrieval.py)
+    try:
+        with retrieval.connect(retrieval.connection_string()) as conn:
+            done = reindex.reembed_figure(conn, figure_id)
+    except embedding.EmbeddingError as exc:     # nothing was written: the old vectors stay
+        raise HTTPException(status_code=503, detail=f"embedding service unavailable, try again later ({exc})") from None
+    if done == 0:
+        raise HTTPException(status_code=404, detail="figure not found")
+    return {"status": "re-embedded", "figure_id": figure_id}
 
 
 @app.get("/admin/ingestion-jobs/{job_id}")

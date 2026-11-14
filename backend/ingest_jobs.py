@@ -152,11 +152,28 @@ def read_report(handbook_id, root=None):
     return report
 
 
-def run_job(job_id, run=subprocess.run, on_done=None):
-    """Run every step of the job. A step that exits with an error stops the job ("failed")."""
+def reindex_steps(handbook_id):
+    """P7-32 (FR-008, UC-10): one step, ingestion/reindex.py, for one handbook or "ALL"."""
+    return [("re-index", [sys.executable, "ingestion/reindex.py", handbook_id])]
+
+
+def create_reindex_job(handbook_id, user_id):
+    """A re-index job, shown with the ingestion jobs (title "Re-index"). Returns its id. Raises UploadError."""
+    with _connect() as conn:
+        if handbook_id != "ALL" and not conn.execute("SELECT 1 FROM documents WHERE id = %s", (handbook_id,)).fetchone():
+            raise UploadError(f"{handbook_id} is not loaded", 404)
+        if conn.execute("SELECT 1 FROM ingestion_jobs WHERE status IN ('queued', 'running')").fetchone():
+            raise UploadError("another ingestion or re-index job is running: wait until it ends", 409)
+        return conn.execute("""INSERT INTO ingestion_jobs (document_id, title, steps_total, created_by)
+                               VALUES (%s, 'Re-index', 1, %s) RETURNING id""", (handbook_id, user_id)).fetchone()[0]
+
+
+def run_job(job_id, run=subprocess.run, on_done=None, todo=None):
+    """Run every step of the job. A step that exits with an error stops the job ("failed").
+    todo: the steps; default = the ingestion steps of the job's handbook."""
     with _connect() as conn:
         handbook_id = conn.execute("SELECT document_id FROM ingestion_jobs WHERE id = %s", (job_id,)).fetchone()[0]
-    todo = steps(handbook_id)
+    todo = todo or steps(handbook_id)
     _update(job_id, status="running", started_at=datetime.now(timezone.utc), steps_total=len(todo))
     for done, (name, command) in enumerate(todo):
         _update(job_id, step=name, steps_done=done)
@@ -186,11 +203,11 @@ def _refresh_search_index():
     retrieval.load_index.cache_clear()
 
 
-def start(job_id):
+def start(job_id, todo=None):
     def worker():
         with _lock:
             try:
-                run_job(job_id, on_done=_refresh_search_index)
+                run_job(job_id, on_done=_refresh_search_index, todo=todo)
             except Exception as exc:     # never leave a job "running" because of a bug or a lost database
                 try:
                     _update(job_id, status="failed", error=f"{type(exc).__name__}: {exc}"[:ERROR_TAIL_CHARS],

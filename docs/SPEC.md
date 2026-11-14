@@ -9,7 +9,7 @@
 | Course | Software Engineering — ESIB, Université Saint-Joseph |
 | Team Members | Mia Badran – Clara Maaz |
 | Instructor / Supervisor | Mr. Georges Salloum |
-| Version | 1.1 |
+| Version | 1.3 |
 | Date / Status | 19/10/2026 — Baseline, tagged `spec-v1` before the first implementation commit |
 
 ### 1.1 Change log
@@ -19,8 +19,8 @@
 | 0.1 | 04/10/2026 | First draft (Word). |
 | 1.0 | 19/10/2026 | Converted to Markdown. Added section 5 (chunking strategy, page numbering, evaluation metrics), FR-009 (answers with cited sources), low-confidence handling in FR-002, decisions for UC-04 A2 and UC-07, stack decisions (2.5), corrected cross-references. |
 | 1.1 | 28/10/2026 | 5.1: chunk size cap set to 200 words from the measurement of FAA-H-8083-15B; embedding model must accept ≥ 512 tokens; content covered by chunking listed. |
-
 | 1.2 | 06/11/2026 | 2.5: embedding model (BAAI/bge-small-en-v1.5, 384 dimensions) and language model (Groq) recorded, as 2.5 required once chosen. 5.1: the image embedding of each figure is required, not optional, to match the brief (sections 4 and 7, joint retrieval over text and images). FR-008 priority Should -> Must, because the brief assesses re-indexing in the administrative interface (section 12). |
+| 1.3 | 14/11/2026 | Decisions of the supervisor meeting of 13 Nov 2026. FR-009: the learner page is a cumulative chat (each question is sent with the conversation, follow-up questions are understood, 3 suggested follow-up questions); the answer is written by the language model from the retrieved passages only and always comes with the figure(s) and their sources. New FR-010: good / bad rating of each answer. FR-001 and UC-01: the admin uploads the handbook PDF from the web interface and the ingestion runs as a background job (queued / running / done / failed). 2.5: the embedding model is now Gemini `gemini-embedding-001` (768 dimensions), chosen by measurement on the 50 questions as the supervisor asked ("OpenAI or Gemini, check which suits your data best", EVALUATION 4.2); bge-small is kept as a fallback when the API fails. **Divergence from 1.2 (5.1, image embedding required):** the CLIP image embedding was built and measured (EVALUATION 3.7) and lowered retrieval (Hit@1 0.071 alone, 0.167 fused with text, vs 0.643 text), so it is kept out of the live search; the figures are found through their caption and citing passages. TO CONFIRM WITH SUPERVISOR. |
 
 Any later divergence from this document is recorded in this change log with its reason.
 
@@ -89,8 +89,8 @@ The FAA handbook index and PDF URLs remain stable. Figure extraction quality var
 | Frontend | React (responsive web, no native app) | Confirmed |
 | PDF extraction | PyMuPDF | Confirmed |
 | Figure images | Stored as files in object storage; the database stores their path | Confirmed |
-| Embedding model | BAAI/bge-small-en-v1.5: 384 dimensions per vector (`vector(384)` in pgvector), about 33 M parameters, up to 512 input tokens (meets 5.1). Free, runs on a CPU, light enough for a free host. Measured on the baseline (EVALUATION.md 3.1-3.2). A larger model (bge-base, 768 dimensions) is a candidate for the deliberate improvement; changing the model needs a new migration and a re-embedding. | Confirmed (Week 3; size discussed with the supervisor, 3 Nov) |
-| Language model for answers | Groq, free tier, model `openai/gpt-oss-120b`, through an OpenAI-compatible API. Provider, model and key are read only from `.env`, so the provider can be changed without code changes. The model only rewrites retrieved passages (FR-009, BR-004); without it the system answers with extracted sentences. | Confirmed (supervisor, 3 Nov) |
+| Embedding model | Google Gemini `gemini-embedding-001`, 768 dimensions (`vector(768)`, migration 010), task types RETRIEVAL_DOCUMENT for the stored figure documents and RETRIEVAL_QUERY for the question; the same model at ingestion and at search time. Chosen by measurement against BAAI/bge-small-en-v1.5 on the same 50 questions (EVALUATION 4.2: own-scope Hit@1 0.643 -> 0.881). Its own thresholds (no answer < 0.64, low confidence < 0.66, provisional). The model is chosen with `EMBEDDING_MODEL` in `.env`; OpenAI `text-embedding-3-small` is supported but not measured (paid). bge-small (384 dimensions) stays in the database: when the Gemini API fails or is out of quota, that search uses bge with bge's thresholds instead of failing. Free tier: about 1,000 embedding requests a day; question vectors are cached. | Confirmed (supervisor, 13 Nov: "OpenAI or Gemini, check which suits your data best"; measured 13 Nov) |
+| Language model for answers | Groq, free tier, model `openai/gpt-oss-120b`, through an OpenAI-compatible API. Provider, model and key are read only from `.env`. It is used twice per chat turn at most: to rewrite a follow-up question into a standalone question (prompt `chat_rewrite_v1`), and to write the answer from the retrieved passages only (prompt `chat_answer_v3`, FR-009, BR-004). It is never a source of facts; without it the system answers with extracted sentences. Free tier: 30 requests and 8,000 tokens per minute, 200,000 tokens per day; a 429 answer is retried after Groq's Retry-After. Paid tier TO CONFIRM WITH SUPERVISOR. | Confirmed (supervisor, 3 Nov and 13 Nov) |
 | Hosting | Chosen before Week 6; recorded here when chosen | Open |
 | Task tracking | Jira | Confirmed (supervisor) |
 
@@ -102,8 +102,8 @@ The FAA handbook index and PDF URLs remain stable. Figure extraction quality var
 | --- | --- |
 | Requirement ID | FR-001 |
 | Title | Load Handbook Data |
-| User-Level Requirement | The admin shall be able to load FAA handbook PDFs into the system. |
-| System-Level Requirement | The system shall extract text and figures from each handbook PDF, bind each figure to its caption, to the page it appears on and to the paragraphs that reference it, chunk the text as described in 5.1, and store the result in the PostgreSQL database (pgvector). The system shall record the source URL, licence and retrieval date for each document. |
+| User-Level Requirement | The admin shall be able to load FAA handbook PDFs into the system from the web interface (supervisor, 13 Nov). |
+| System-Level Requirement | The admin uploads the PDF with its title, source URL, licence and retrieval date; the ingestion then runs as a background job whose status (queued, running, done, failed) and report the admin can follow. The system shall extract text and figures from each handbook PDF, bind each figure to its caption, to the page it appears on and to the paragraphs that reference it, chunk the text as described in 5.1, and store the result in the PostgreSQL database (pgvector). The system shall record the source URL, licence and retrieval date for each document. |
 | Primary User(s) | Admin |
 | Priority | Must |
 | Acceptance Criteria | Loading a handbook produces stored text, figures and captions retrievable from the database, with a licence recorded for that document. |
@@ -197,12 +197,24 @@ The FAA handbook index and PDF URLs remain stable. Figure extraction quality var
 | Field | Requirement Description |
 | --- | --- |
 | Requirement ID | FR-009 |
-| Title | Answer with Cited Sources |
-| User-Level Requirement | The learner shall be able to see where every statement in a written answer comes from. |
-| System-Level Requirement | When the system writes an answer, it shall give the language model only the retrieved passages, and each sentence of the answer shall cite the passage it comes from (handbook and page). A sentence without a citation shall not be shown. Every number in the answer shall appear in a cited passage (BR-004); an automated test checks this. |
+| Title | Answer with Cited Sources in a Cumulative Chat |
+| User-Level Requirement | The learner shall be able to have a conversation with the assistant, ask follow-up questions that depend on the previous question and answer, and see where every statement in an answer comes from (supervisor, 13 Nov: "like NotebookLM, but always with the figures"). |
+| System-Level Requirement | Each new message is sent with the conversation so far (cumulative chat). A follow-up question is rewritten into a standalone question before the search. The system shall give the language model only the retrieved passages (the conversation is used only to understand the question, never as a source of facts) and the answer shall be a clear explanation in which each sentence cites the passage it comes from (handbook and page). A sentence without a citation shall not be shown. Every number in the answer shall appear in a cited passage (BR-004); an automated test checks this. The figures cited by the answer are shown first, with their caption, handbook and page (BR-002). The system suggests up to 3 follow-up questions. The no-answer and low-confidence rules of FR-002 apply to every message. |
 | Primary User(s) | Learner |
 | Priority | Must |
-| Acceptance Criteria | Each sentence of a displayed answer links to a retrieved passage, and the automated numeric check passes on the evaluation set. |
+| Acceptance Criteria | Each sentence of a displayed answer links to a retrieved passage; the automated numeric check passes on the evaluation set; a follow-up question with a pronoun ("how are its radials represented?") is answered about the topic of the previous question (EVALUATION, chat evaluation). |
+
+### FR-010 - Rate an Answer
+
+| Field | Requirement Description |
+| --- | --- |
+| Requirement ID | FR-010 |
+| Title | Rate an Answer |
+| User-Level Requirement | The learner shall be able to mark an answer as a good or a bad response (supervisor, 13 Nov). |
+| System-Level Requirement | The system shall store the rating with the question it answers (query log id), the user and the time, one rating per user and answer (it can be changed), and shall show the admin the counts and the list of bad responses with their question. |
+| Primary User(s) | Learner, Admin |
+| Priority | Must |
+| Acceptance Criteria | A learner rates an answer and the rating appears in the admin analytics; a learner cannot read the admin list (403). |
 
 ## 4. Non-Functional Requirements
 
@@ -307,8 +319,8 @@ Sample sizes, the random seed used to draw samples, and all results are recorded
 | Primary actor | Admin (secondary: FAA website, embedding service) |
 | Requirement | FR-001; BR-001, BR-005 |
 | Preconditions | Admin is logged in. The handbook is listed on the FAA handbooks index (or is another source approved by the supervisor). |
-| Trigger | Admin chooses "Add handbook" on the ingestion page. |
-| Main flow | 1. Admin selects a handbook from the FAA index (or enters its PDF URL). 2. System reads the file size and shows it to the admin, who confirms (several handbooks exceed 100 MB). 3. System downloads the PDF and checks that it is a valid PDF. 4. System records the source URL, licence and retrieval date. 5. System extracts the text of each page, its printed page number, and the figures. 6. System detects each caption and figure number and binds every figure to its caption and to the page it appears on. 7. System finds the paragraphs that reference each figure and links them to it. 8. System tags each figure (at least figure number and chapter). 9. System chunks the text (5.1) and makes the content searchable (embeddings stored in the database). 10. System shows an ingestion report: pages processed, figures extracted, captions bound, figures without caption. |
+| Trigger | Admin chooses "Upload" in the Sources panel of the admin area (supervisor, 13 Nov). |
+| Main flow | 1. Admin chooses the handbook PDF (downloaded from the FAA index) and types its id, title, source URL, licence and retrieval date. 2. System checks the form and the file (a PDF, at most 300 MB) and stores it. 3. System starts the ingestion as a background job and shows its status (queued, running, done, failed) and current step. 4. System records the source URL, licence and retrieval date. 5. System extracts the text of each page, its printed page number, and the figures. 6. System detects each caption and figure number and binds every figure to its caption and to the page it appears on. 7. System finds the paragraphs that reference each figure and links them to it. 8. System tags each figure (at least figure number and chapter). 9. System chunks the text (5.1) and makes the content searchable (embeddings stored in the database). 10. System shows an ingestion report: pages processed, figures extracted, captions bound, figures without caption. |
 | Alternative / exception flows | A1. URL unreachable or file is not a valid PDF: the system shows the error and stores nothing. A2. Licence cannot be determined: the document is not made searchable until the admin supplies it (BR-001). A3. A figure has no detectable caption: it is stored as "unbound" and added to the QA queue (UC-04). A4. Ingestion fails part-way: status is "Failed", partial content is not searchable, the admin can retry. A5. The document was already ingested: the system asks whether to cancel or re-ingest. |
 | Postconditions | The document, its pages, text, figures, captions, references and licence are stored and searchable, and the report is available to the admin. |
 
@@ -319,8 +331,8 @@ Sample sizes, the random seed used to draw samples, and all results are recorded
 | Primary actor | Learner (secondary: embedding / language model service) |
 | Requirement | FR-002, FR-009; NFR-001; BR-002, BR-004 |
 | Preconditions | Learner (or Admin) is logged in. At least one handbook has been ingested. |
-| Trigger | Learner opens the search page and submits a topic or symptom. |
-| Main flow | 1. Learner opens the search page, usually on a phone. 2. Learner types a topic or symptom and submits. 3. System searches the stored text and figures together. 4. System selects the best matching passages and figures. 5. System displays the procedure or explanation text, taken from retrieved sources only, with a citation on each sentence. 6. System displays the actual figure image (not a description of it) with its caption, handbook name and page number. 7. Learner reads the result and may zoom into the figure, verify the source (UC-07) or flag the figure (UC-03). |
+| Trigger | Learner opens the chat page and sends a topic, a symptom or a follow-up question. |
+| Main flow | 1. Learner opens the chat page, usually on a phone. 2. Learner types a topic or symptom and sends it; the conversation so far is sent with it, and a follow-up question is rewritten into a standalone question (FR-009). 3. System searches the stored text and figures together. 4. System selects the best matching passages and figures. 5. System displays the procedure or explanation text, taken from retrieved sources only, with a citation on each sentence. 6. System displays the actual figure image (not a description of it) with its caption, handbook name and page number. 7. Learner reads the result and may zoom into the figure, verify the source (UC-07) or flag the figure (UC-03). |
 | Alternative / exception flows | A1. No adequate match: the system states clearly that no answer was found and shows no weak match; the question is recorded as unanswered. A2. Empty query: the system asks the learner to enter a question. A3. Low confidence: the system shows the result with a visible low-confidence notice (FR-002). A4. Slow connection: text appears first and figures load progressively with a placeholder (NFR-001). A5. Internal error: the system shows a clear error message; the failure is logged. |
 | Postconditions | The learner has seen text, figure and provenance (or a no-answer message). The query, its latency and its outcome are logged for analytics (UC-09). |
 
