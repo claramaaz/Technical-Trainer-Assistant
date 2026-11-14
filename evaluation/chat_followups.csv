@@ -1,0 +1,11 @@
+id,first_question,follow_up,handbook,figure_number,source_question,author
+F01,What is a turn coordinator?,What is the purpose of its rate gyro?,FAA-H-8083-15B,5-34,Q009,Claude draft (to review)
+F02,What is an attitude indicator?,What components make up its display?,FAA-H-8083-15B,7-52,Q010,Claude draft (to review)
+F03,What is a VOR?,How are its radials represented?,FAA-H-8083-15B,9-10,Q013,Claude draft (to review)
+F04,What is a pitot-static system?,What happens to the airspeed indicator if it gets blocked during a climb?,FAA-H-8083-15B,5-2,Q020,Claude draft (to review)
+F05,What is a thunderstorm?,What are the stages in its life?,FAA-H-8083-25C,12-28,Q042,Claude draft (to review)
+F06,What is a wet-sump oil system?,How does the oil flow through it?,FAA-H-8083-25C,7-17,Q043,Claude draft (to review)
+F07,What is a PAPI?,What do its lights show when I am too high or too low?,FAA-H-8083-25C,14-30,Q036,Claude draft (to review)
+F08,What is the segmented circle at an airport?,How do I use it to find the landing direction?,FAA-H-8083-25C,14-38,Q038,Claude draft (to review)
+F09,What is a V-g diagram?,How do I read it?,FAA-H-8083-25C,5-55,Q044,Claude draft (to review)
+F10,What is density altitude?,How do I find it from the chart using the temperature and the pressure altitude?,FAA-H-8083-25C,11-4,Q041,Claude draft (to review)

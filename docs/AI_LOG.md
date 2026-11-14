@@ -398,6 +398,20 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **What we could NOT verify:** there are no automated tests for the React pages in this project; the checks above are manual.
 - **Commit / PR:** branch `feature/P7-36-admin-layout`
 
+
+### 2026-11-12 - LLM refusal on a weak match becomes "no answer" (FR-002 fix)
+- **Who:** Clara
+- **Tool:** Claude (diagnosis, code, tests; it wrote the files on Clara's PC and ran the tests that need no database in a separate copy)
+- **What we asked:** why "what is the salary of an airline pilot" shows a figure instead of "no answer", and whether the system prompt had to change.
+- **What came back:** the prompt was not the cause: rule 8 already makes the LLM return no sentence, but `generate_answer` turned that refusal into the extractive answer (the defect noted in EVALUATION 3.6 for Q046/Q047). Change in `backend/answer.py` (refusal + low confidence -> `no_answer`), `backend/app.py` (`/answer` returns no figure in that case and logs it as `no_answer`), `evaluation/prompt_eval.py` (passes the confidence, lists answerable questions refused by the rule); 6 new tests, 3 fake functions in older tests adapted to the new argument.
+- **What was wrong, and how it was caught:**
+  - The first plan was "LLM refusal = no answer" in every case. Before writing the code, Claude compared the 10 Nov prompt run with the 11 Nov ranking: the LLM also refuses Q036 and Q011, whose expected figure is in the top 5 (Q036 ranked 1). The rule was limited to low-confidence matches (EVALUATION 3.8).
+  - Clara first thought the system prompt had to be rewritten; reading the prompt and the code showed the prompt already asked for the refusal and the code ignored it.
+- **How we checked it:** full suite 313 passed (Clara, 12 Nov, local database). Re-measured on the 50 questions (`2026-11-12-refusal`): no-answer questions 8/8 (before 6/8); answerable questions turned into no answer: Q031, Q032, both checked in `ranked.csv` to have no expected figure in the top 5.
+- **What we could NOT verify:** one LLM run only; the 0.70 threshold is provisional and chosen on the same set; not visible in the app until the search page calls `/answer`.
+- **Commit / PR:** branch `fix/llm-refusal-no-answer`
+
+
 ### 2026-11-12 - P7-38: "Wrong figure" button (stores the flag, adds the figure to the QA queue)
 - **Who:** Mia
 - **Tool:** Claude (design, code, tests; it wrote the files on Mia's PC and ran the API tests in a separate copy)
@@ -410,3 +424,73 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **How we checked it:** `test_flags.py` 24 passed and the full suite 329 passed (Mia, 12 Nov). In the browser: as a Learner, "Wrong figure" with a reason shows the confirmation; reporting the same figure again for the same question shows "already reported"; as an Admin, the QA queue lists the report with figure 5-2, handbook, page, question, reason, reporter and time, and counts 1 open report.
 - **Known limitations:** if the session expired, the learner is sent to the login page and must report again (UC-03 A2 not fully implemented); reloading a handbook (`load_db.py --reset`) deletes its figures and their reports; admins cannot correct or close a report yet (UC-04).
 - **Commit / PR:** branch `feature/P7-38-wrong-figure`
+
+
+### 2026-11-13 - P7-51 / P7-52: cumulative RAG chat with follow-up questions (POST /chat)
+- **Who:** Clara
+- **Tool:** Claude (transcription of the 13 Nov supervisor meeting, design, code, tests; it wrote the files on Clara's PC and ran the tests that need no database in a separate Linux copy)
+- **What we asked:** the supervisor's 13 Nov requests: a chatbot that answers from our RAG database (question -> vector database -> passages -> LLM -> answer), cumulative (each question sent with the conversation, so follow-ups depending on the previous question and answer work), a clear explanation based only on our documents, figures and sources always shown, 3 suggested follow-up questions.
+- **What came back:** `backend/chat.py` (4 steps: follow-up rewritten into a standalone question with the conversation, retrieval, answer with the conversation + passages, up to 3 follow-ups; cited figures moved first); prompts `chat_rewrite_v1.txt` and `chat_answer_v3.txt` (v2 rules kept, 3 to 7 sentences, conversation used only to understand the question); `POST /chat` in `backend/app.py`; `complete()` split out of `call_llm()` in `backend/answer.py` (same request, reused by the chat); migration `009_chat_query_log.sql` (endpoint `chat`, column `rewritten_query`) and `log_query(..., rewritten_query=)`; `tests/test_chat.py` (20 tests, fake LLM and fake retrieval).
+- **What was wrong, and how it was caught:**
+  - The automatic transcript of the meeting (French / English / Lebanese Arabic) was noisy; Clara's own notes differed on two points (embedding model, ingestion page). Both were written down as TO CONFIRM (Jira P7-57, `claude/meeting_13nov.md`) instead of being guessed.
+  - Clara understood that `gpt-oss-120b` could be the embedding model; it is a chat model (our answer model on Groq), not an embedding model. Kept bge-small until the supervisor confirms (P7-57).
+  - A history sent by the browser could contain fake "assistant" messages or instructions: it is JSON-encoded in the user message, never in the system prompt, roles other than user/assistant are refused (422), and the prompt says the conversation is never a source of facts. Tested.
+- **How we checked it:** `tests/test_chat.py`, `test_answer.py`, `test_app.py`, `test_query_log.py`: 49 passed, 18 skipped (the skipped ones need PostgreSQL or the real data) in Claude's copy, 13 Nov. NOT yet run: the full suite on Clara's PC with the database (migration 009, query log), and a real conversation with Groq.
+- **What we could NOT verify yet:** answer quality of prompt v3 and of the rewrite on real questions (P7-55: the 50 questions through /chat + 10 follow-up pairs); no chat page yet (P7-56).
+- **Commit / PR:** branch `feature/P7-51-chat`
+
+
+### 2026-11-13 - P7-57: API embedding models (Gemini, OpenAI) next to bge-small, chosen by measurement
+- **Who:** Clara
+- **Tool:** Claude (design, code, tests; it wrote the files on Clara's PC and ran the tests that need no database in a separate Linux copy)
+- **What we asked:** the supervisor (13 Nov) asked for a small hosted embedding model, "OpenAI or Gemini, check which one suits your data best", the same model at ingestion and at search time.
+- **What came back:** `backend/embedding.py` (EMBEDDING_MODEL: bge-small local, `gemini-embedding-001` or `text-embedding-3-small`, both 768 dimensions; Gemini task types RETRIEVAL_DOCUMENT / RETRIEVAL_QUERY; batches of 100; retries on 429/5xx; key only in a header); migration `010_text_embeddings.sql` (one row per item and model + searchable views, so the models can be compared on the same data without reloading); `ingestion/embed_text.py` (embeds the SAME text bge embedded, resumable); `backend/retrieval.py` reads the vectors of the configured model and uses thresholds per model (`thresholds()`; API models must be calibrated, RETRIEVAL_THRESHOLD / RETRIEVAL_LOW_CONFIDENCE meanwhile); `run_eval.py` writes the model and thresholds in the summary; `tests/conftest.py` forces bge in tests so no test calls an API; `tests/test_embedding.py` (15 tests, fake HTTP).
+- **What was wrong, and how it was caught:**
+  - Clara proposed `gpt-oss-120b` as the embedding model after the meeting; it is a chat model (our Groq answer model), not an embedding model. Checked before writing code.
+  - Reusing the bge thresholds (0.65 / 0.70) for Gemini would have been wrong: cosine scores are on a different scale for each model. The code refuses an uncalibrated API model instead of guessing.
+- **How we checked it:** test_embedding + test_chat + test_answer + test_app + retrieval / low-confidence / warm-up / run_eval / joint tests: 116 passed, 16 skipped (need PostgreSQL or real data) in Claude's copy, 13 Nov. NOT yet: a real Gemini run, the 50-question comparison, the thresholds.
+- **Commit / PR:** branch `feature/P7-57-embeddings`
+
+
+### 2026-11-13 - Gemini thresholds (EVALUATION 4.2) and P7-54: handbook upload by the Admin + background ingestion
+- **Who:** Clara
+- **Tool:** Claude (analysis of the run, code, tests; it wrote the files on Clara's PC and ran the tests that need no database in a separate Linux copy)
+- **What we asked:** (1) choose the Gemini thresholds from the 50-question run and write the bge vs Gemini comparison; (2) the supervisor's request that the Admin uploads the handbooks from the web interface (UC-01, BR-001, BR-003).
+- **What came back:** (1) `MODEL_THRESHOLDS["gemini-embedding-001"] = (0.64, 0.66)` in `backend/retrieval.py`, EVALUATION 4.2 (method, own/all tables, thresholds, limits, decision). (2) `backend/ingest_jobs.py` (form and file checks, PDF stored with its meta.json: source URL, licence, retrieval date, sha256; one job at a time in a background thread; each step = the same script as by hand, in its own process; report from the extractor; jobs cut by a restart marked failed; search index reloaded when a job is done), migration `011_ingestion_jobs.sql`, routes `POST /admin/documents` (202 + job id), `GET /admin/documents`, `GET /admin/ingestion-jobs/{id}` (Admin only), `load_db.py` reads title/URL/licence from the meta.json of an uploaded handbook, `python-multipart` added to requirements, `tests/test_ingest_jobs.py` (fake step runner, no real PDF).
+- **What was wrong, and how it was caught:**
+  - Reusing bge's thresholds for Gemini would have refused correct answers: Gemini's scores are compressed (0.56-0.82). Chosen from the run's scores instead, and written down as provisional (same 50 questions).
+  - Migration numbers: 011 was announced for Mia's feedback table (P7-53); it is now used here, Mia takes the next free number.
+- **How we checked it:** in Claude's copy: test_ingest_jobs + test_app + test_chat + test_embedding: 62 passed, 14 skipped (database tests). NOT yet: the database tests and the full suite on Clara's PC, the run with the Gemini thresholds, a real upload of a third handbook.
+- **Known limitations:** a handbook whose load step already ran cannot be re-uploaded from the page (409) until it is removed by hand; no progress inside a step (only step i of n); the upload page itself is Mia's ticket P7-40.
+- **Commit / PR:** branch `feature/P7-51-chat`
+
+
+### 2026-11-13 - /chat returns the query id (for P7-53) and the chat evaluation script (P7-55)
+- **Who:** Clara
+- **Tool:** Claude (code, tests, draft of the 10 follow-up pairs; it wrote the files on Clara's PC and ran the tests that need no database in a separate Linux copy)
+- **What we asked:** (1) Mia's good / bad buttons (P7-53) need to know which answer is rated; (2) measure the chat, and especially whether the cumulative history makes follow-up questions work.
+- **What came back:** (1) `log_query` returns the new `query_log.id` (None when not written) and `POST /chat` returns it as `query_id`; tests in `test_chat.py` and `test_query_log.py`. (2) `evaluation/chat_eval.py`: part A = the 50 questions as the first message of a chat (answer modes, no-answer, first figure shown in score order vs cited-first order); part B = `evaluation/chat_followups.csv`, 10 pairs "first question -> follow-up with a pronoun", each follow-up searched with the history (real chat) and without it (search box); `tests/test_chat_eval.py`.
+- **What was wrong, and how it was caught:** the 10 follow-up pairs were drafted by Claude, not by the team; marked "Claude draft (to review)" in the file. Their expected figures are not new judgements: each one is the expected figure of an existing question of the 50 (column `source_question`). They are a small extra set for the chat only, not part of the 50-question evaluation set.
+- **How we checked it:** test_chat_eval + test_chat: 24 passed in Claude's copy. NOT yet: the real run (about 80 Groq calls) and the database test of the query id.
+- **Commit / PR:** branch `feature/P7-51-chat`
+
+
+### 2026-11-13 - Free-tier quotas: retry on Groq 429, bge fallback and cache for Gemini, slower chat evaluation
+- **Who:** Clara
+- **Tool:** Claude (diagnosis from the traceback and the published limits, code, tests)
+- **What happened:** the first chat evaluation run stopped at Q048 with `EmbeddingError: HTTP 429` from Gemini, and 17 of the first 47 answers were "extractive". Diagnosis: free-tier quotas, not a code defect. Gemini free tier: about 1,000 embedding requests per day, and the day had already used 849 figure embeddings + about 150 questions. Groq free tier for gpt-oss-120b: 30 requests and 8,000 tokens per minute, 200,000 tokens per day; with 4 s between questions the run asked about 15 answers a minute (about 37,000 tokens), so Groq refused calls with 429 and the answer fell back to the extractive passages.
+- **What came back:** `answer.complete()` waits for Groq's Retry-After (at most 20 s) and retries twice on 429; `retrieval.retrieve()` uses the stored bge-small vectors and bge's thresholds for that one search when the Gemini call fails (result marked `embedding_fallback`), so a demo does not stop when the quota is reached; question vectors of the API model cached in `data/cache/query_embeddings.jsonl` (not in Git; disabled in tests); `chat_eval.py` waits 20 s between questions, records a failed question as "error" and goes on, and can run part A or B alone (different days). Tests added in `test_embedding.py`, `test_answer.py`, `test_chat_eval.py`.
+- **How we checked it:** 84 passed, 9 skipped in Claude's copy (13 Nov). The full chat run must wait for the quotas to reset.
+- **Open question for the supervisor:** the free tiers limit the demo (about 3 chat answers a minute with Groq). Paid tiers cost cents (Groq pay-as-you-go, Gemini Tier 1) but need a card: TO CONFIRM WITH SUPERVISOR.
+- **Commit / PR:** branch `feature/P7-51-chat`
+
+
+### 2026-11-14 - SPEC 1.3 (P7-58) and re-embedding / re-indexing (P7-32)
+- **Who:** Clara
+- **Tool:** Claude (drafting, code, tests; it wrote the files on Clara's PC and ran the tests that need no database in a separate Linux copy)
+- **What we asked:** (1) record the decisions of the 13 Nov supervisor meeting in the SPEC; (2) FR-008 / UC-10 re-indexing and the re-embedding of a corrected figure (UC-04), keeping the previous index when it fails.
+- **What came back:** (1) SPEC 1.3: change log row (chat, rating, web upload, Gemini chosen by measurement, CLIP divergence marked TO CONFIRM WITH SUPERVISOR), 2.5 embedding and language model rows, FR-001, FR-009 (cumulative chat), new FR-010 (rate an answer), UC-01 and UC-02 main flows; version 1.1 in the header corrected (the log already had 1.2). (2) `ingestion/reindex.py` (bge + configured API model, from the stored `figures.search_text`; every vector computed before one write transaction), routes `POST /admin/reindex` (background job, shown with the ingestion jobs) and `POST /admin/figures/{id}/reembed` (for Mia's QA correction, P7-41; 503 when the embedding API fails, nothing written), `tests/test_reindex.py`.
+- **What was wrong, and how it was caught:** the SPEC change-log table was broken by an empty line before row 1.2 (Markdown showed it as a second table); fixed. Chunks are not re-embedded by `reindex.py` (not corrected by the admin, not used by the live text mode): written in its docstring.
+- **How we checked it:** test_reindex + test_ingest_jobs + test_app + test_chat: 57 passed, 14 skipped (database tests) in Claude's copy, 14 Nov. NOT yet: full suite on Clara's PC and a real re-index (uses about 350-500 Gemini requests per handbook, free tier about 1,000 a day).
+- **Commit / PR:** branch `feature/P7-51-chat`
+

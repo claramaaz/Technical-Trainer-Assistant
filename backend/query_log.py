@@ -1,6 +1,6 @@
 """Query log (P7-28; FR-007, UC-02 postconditions): one row in query_log per question asked.
 
-log_query(endpoint, query, latency_ms, found=None, answer_mode=None, error=None)
+log_query(endpoint, query, latency_ms, found=None, answer_mode=None, error=None, rewritten_query=None)
     outcome = "error"          if error is given (the request failed),
               "no_answer"      if retrieval found no adequate answer,
               "low_confidence" if figures were returned with confidence "low" (FR-002, FR-007),
@@ -29,8 +29,10 @@ DSN = None      # None = the configured database; tests set their own
 ENABLED = True  # False = write nothing (set by tests/conftest.py)
 
 INSERT_SQL = """
-    INSERT INTO query_log (endpoint, query, outcome, latency_ms, result_count, top_score, answer_mode, error)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"""
+    INSERT INTO query_log (endpoint, query, outcome, latency_ms, result_count, top_score, answer_mode, error,
+                           rewritten_query)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    RETURNING id"""
 
 
 @lru_cache(maxsize=1)
@@ -53,18 +55,19 @@ def outcome_of(found, error=None):
     return "answered"
 
 
-def log_query(endpoint, query, latency_ms, found=None, answer_mode=None, error=None):
-    """Write one row. Returns True if written, False if the log is disabled or could not be written."""
+def log_query(endpoint, query, latency_ms, found=None, answer_mode=None, error=None, rewritten_query=None):
+    """Write one row. Returns its id (query_log.id) if written, None if the log is disabled or could not
+    be written. The chat returns this id so an answer can be rated (P7-53, good / bad response).
+    rewritten_query: /chat only, the standalone question searched for a follow-up (migration 009)."""
     if not ENABLED:
-        return False
+        return None
     results = (found or {}).get("results") or []
     row = (endpoint, query, outcome_of(found, error), int(latency_ms), len(results),
            results[0]["score"] if results else None, answer_mode,
-           type(error).__name__ if error is not None else None)
+           type(error).__name__ if error is not None else None, rewritten_query)
     try:
         with psycopg.connect(DSN or _configured_dsn()) as conn:
-            conn.execute(INSERT_SQL, row)
-        return True
+            return conn.execute(INSERT_SQL, row).fetchone()[0]
     except (Exception, SystemExit) as exc:  # SystemExit: connection_string() exits if .env is incomplete
         logging.warning("query log not written (%s): %s", type(exc).__name__, exc)
-        return False
+        return None

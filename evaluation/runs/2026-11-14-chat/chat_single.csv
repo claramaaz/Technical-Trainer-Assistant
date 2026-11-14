@@ -1,0 +1,51 @@
+id,type,expected,mode,fallback_reason,sentences,follow_ups,figures,confidence,rank_by_score,rank_shown,first_shown,latency_ms
+Q001,topic,FAA-H-8083-15B 1-1,llm,,2,3,5,high,2,1,FAA-H-8083-15B 1-1,2983
+Q002,topic,FAA-H-8083-15B 3-3,llm,,3,3,5,high,1,1,FAA-H-8083-15B 3-3,1968
+Q003,topic,FAA-H-8083-15B 3-9,llm,,2,3,5,high,1,1,FAA-H-8083-15B 3-9,2267
+Q004,topic,FAA-H-8083-15B 4-2,llm,,5,3,5,high,3,1,FAA-H-8083-15B 4-2,3007
+Q005,topic,FAA-H-8083-15B 4-5,llm,,3,3,5,low,1,1,FAA-H-8083-15B 4-5,2899
+Q006,topic,FAA-H-8083-15B 4-7,llm,,4,3,5,high,,,FAA-H-8083-25C 11-2,3377
+Q007,topic,FAA-H-8083-15B 4-3,llm,,3,3,5,high,1,1,FAA-H-8083-15B 4-3,2398
+Q008,topic,FAA-H-8083-15B 5-7,llm,,3,3,5,high,1,1,FAA-H-8083-15B 5-7,2570
+Q009,topic,FAA-H-8083-15B 5-34,llm,,4,3,5,high,1,1,FAA-H-8083-15B 5-34,3624
+Q010,topic,FAA-H-8083-15B 7-52,llm,,2,3,5,high,1,1,FAA-H-8083-15B 7-52,2369
+Q011,topic,FAA-H-8083-15B 7-73,extractive,no_valid_sentences,17,0,5,high,1,1,FAA-H-8083-15B 7-73,1947
+Q012,topic,FAA-H-8083-15B 9-1,llm,,4,3,5,high,1,1,FAA-H-8083-15B 9-1,3017
+Q013,topic,FAA-H-8083-15B 9-10,llm,,2,3,5,high,1,1,FAA-H-8083-15B 9-10,2719
+Q014,topic,FAA-H-8083-15B 9-17,llm,,3,3,5,high,1,1,FAA-H-8083-15B 9-17,2942
+Q015,topic,FAA-H-8083-15B 10-13,llm,,5,3,5,high,1,1,FAA-H-8083-15B 10-13,2970
+Q016,topic,FAA-H-8083-15B 10-17,llm,,3,3,5,high,,,FAA-H-8083-25C 11-19,2759
+Q017,topic,FAA-H-8083-15B 11-2,llm,,3,3,5,high,1,1,FAA-H-8083-15B 11-2,2647
+Q018,topic,FAA-H-8083-15B 11-11,llm,,3,3,5,high,1,2,FAA-H-8083-15B 11-9,2792
+Q019,topic,FAA-H-8083-15B 11-18,llm,,1,3,5,high,1,1,FAA-H-8083-15B 11-18,2305
+Q020,symptom,FAA-H-8083-15B 5-2,llm,,3,3,5,high,4,4,FAA-H-8083-25C 8-9,2934
+Q021,topic,FAA-H-8083-15B 5-40,llm,,2,3,5,high,1,1,FAA-H-8083-15B 5-40,2606
+Q022,symptom,FAA-H-8083-15B 5-20,llm,,3,3,5,high,2,1,FAA-H-8083-15B 5-20,2777
+Q023,symptom,FAA-H-8083-15B 7-39,llm,,3,3,5,high,1,1,FAA-H-8083-15B 7-39,2619
+Q024,no-answer,FAA-H-8083-15B,no_answer,,0,0,0,,,,,699
+Q025,no-answer,FAA-H-8083-15B,no_answer,llm_refused_low_confidence,0,0,0,,,,,1333
+Q026,symptom,FAA-H-8083-25C 7-11,llm,,4,3,5,high,1,1,FAA-H-8083-25C 7-11,3988
+Q027,symptom,FAA-H-8083-25C 7-21,llm,,5,3,5,low,1,1,FAA-H-8083-25C 7-21,2784
+Q028,symptom,FAA-H-8083-25C 8-11,llm,,3,3,5,high,1,1,FAA-H-8083-25C 8-11,3101
+Q029,symptom,FAA-H-8083-25C 8-22,llm,,4,3,5,high,1,3,FAA-H-8083-15B 7-18,2368
+Q030,symptom,FAA-H-8083-25C 17-5,llm,,4,3,5,high,,,FAA-H-8083-15B 6-7,3229
+Q031,symptom,FAA-H-8083-25C 12-17,llm,,3,3,5,high,1,1,FAA-H-8083-25C 12-17,4001
+Q032,symptom,FAA-H-8083-25C 5-17,llm,,3,3,5,low,,,FAA-H-8083-25C 5-16,3158
+Q033,symptom,FAA-H-8083-25C 6-5,llm,,4,3,5,high,3,2,FAA-H-8083-15B 4-16,3671
+Q034,symptom,FAA-H-8083-25C 5-51,llm,,2,3,5,high,2,1,FAA-H-8083-25C 5-51,3838
+Q035,topic,FAA-H-8083-25C 7-35,llm,,1,3,5,high,1,1,FAA-H-8083-25C 7-35,3246
+Q036,topic,FAA-H-8083-25C 14-30,extractive,no_valid_sentences,24,0,5,high,1,1,FAA-H-8083-25C 14-30,5285
+Q037,topic,FAA-H-8083-25C 14-42,extractive,no_valid_sentences,25,0,5,high,1,1,FAA-H-8083-25C 14-42,2890
+Q038,topic,FAA-H-8083-25C 14-38,llm,,4,3,5,high,1,1,FAA-H-8083-25C 14-38,5432
+Q039,topic,FAA-H-8083-25C 16-21,llm,,7,3,5,high,2,2,FAA-H-8083-25C 16-19,9507
+Q040,topic,FAA-H-8083-25C 10-3,llm,,3,3,5,high,1,1,FAA-H-8083-25C 10-3,3951
+Q041,topic,FAA-H-8083-25C 11-4,llm,,3,3,5,high,1,2,FAA-H-8083-25C 11-22,3181
+Q042,topic,FAA-H-8083-25C 12-28,llm,,3,3,5,high,1,1,FAA-H-8083-25C 12-28,8511
+Q043,topic,FAA-H-8083-25C 7-17,llm,,3,3,5,high,1,1,FAA-H-8083-25C 7-17,3188
+Q044,topic,FAA-H-8083-25C 5-55,llm,,3,3,5,high,1,1,FAA-H-8083-25C 5-55,2893
+Q045,no-answer,FAA-H-8083-25C,no_answer,,0,0,0,,,,,2375
+Q046,no-answer,FAA-H-8083-25C,no_answer,,0,0,0,,,,,1838
+Q047,no-answer,FAA-H-8083-25C,no_answer,,0,0,0,,,,,920
+Q048,no-answer,FAA-H-8083-25C,no_answer,,0,0,0,,,,,4302
+Q049,no-answer,FAA-H-8083-25C,no_answer,,0,0,0,,,,,1648
+Q050,no-answer,FAA-H-8083-25C,no_answer,,0,0,0,,,,,1501

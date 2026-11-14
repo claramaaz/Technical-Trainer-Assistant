@@ -1,6 +1,7 @@
 """Answer layer (P7-25, P7-27): a short answer made ONLY from the retrieved passages, each sentence cited.
 
-generate_answer(query, results) -> {"mode": "llm" | "extractive" | "no_answer",
+generate_answer(query, results, reason=None, confidence=None)
+    -> {"mode": "llm" | "extractive" | "no_answer",
                                     "sentences": [{"text": str, "citations": [passage ids]}],
                                     "fallback_reason": None | str}
 
@@ -10,7 +11,13 @@ What protects the reader (FR-002, BR-004):
   1. no_adequate_answer from retrieval -> the LLM is never called (mode "no_answer").
   2. A sentence with no citation, or citing an id that was not given, is removed.
   3. Numeric guard: a sentence with a number that is not in the passages it cites is removed.
-  4. If nothing is left, or the LLM fails (timeout, HTTP error, bad JSON, no key): the extractive
+  4. The LLM returns NO sentence (prompt rule 8: no passage is about the question) AND retrieval
+     marked the match as low confidence -> mode "no_answer", reason "llm_refused_low_confidence".
+     FR-002 / UC-02 A1: a clear "no answer" instead of a weak match. Rule chosen from our own
+     measures (EVALUATION 3.6): every question the LLM refused with a score under 0.70 was a
+     no-answer question or had no correct figure in the top 5; the refused questions with a
+     correct figure all scored 0.70 or more. So a refusal on a high-confidence match keeps the figure.
+  5. If nothing is left, or the LLM fails (timeout, HTTP error, bad JSON, no key): the extractive
      answer = the retrieved passages word for word, each sentence with its passage id.
 
 Settings come from the environment or .env: LLM_PROVIDER, LLM_BASE_URL, LLM_MODEL, LLM_API_KEY.
@@ -19,6 +26,7 @@ The key is only sent in the Authorization header; it is never printed, logged or
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import httpx
@@ -28,6 +36,9 @@ from migrate import read_env_file  # the folder is added to sys.path by backend.
 
 PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "answer_system_v2.txt"  # v2 kept after P7-26 (EVALUATION 3.6)
 TIMEOUT_SECONDS = 10
+RATE_LIMIT_RETRIES = 2        # Groq free tier: 30 requests and 8,000 tokens per minute
+MAX_WAIT_SECONDS = 20
+_sleep = time.sleep           # replaced in tests
 SETTINGS = ("LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY")
 
 NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
@@ -80,8 +91,9 @@ def build_user_message(query, results):
             + "\n\nQuestion: " + query)
 
 
-def call_llm(query, results, settings):
-    """One request to the OpenAI-compatible chat endpoint. Returns the model's text. Raises LLMFailure."""
+def complete(messages, settings):
+    """One request to the OpenAI-compatible chat endpoint with these messages, JSON output asked.
+    Returns the model's text. Raises LLMFailure. Also used by the chat (backend/chat.py, P7-51)."""
     if not settings.get("LLM_API_KEY"):
         raise LLMFailure("missing_api_key")
     if not settings.get("LLM_BASE_URL") or not settings.get("LLM_MODEL"):
@@ -90,15 +102,21 @@ def call_llm(query, results, settings):
         "model": settings["LLM_MODEL"],
         "temperature": 0,
         "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": PROMPT_FILE.read_text(encoding="utf-8")},
-            {"role": "user", "content": build_user_message(query, results)},
-        ],
+        "messages": messages,
     }
     url = settings["LLM_BASE_URL"].rstrip("/") + "/chat/completions"
     try:
-        response = httpx.post(url, json=body, timeout=TIMEOUT_SECONDS,
-                              headers={"Authorization": "Bearer " + settings["LLM_API_KEY"]})
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            response = httpx.post(url, json=body, timeout=TIMEOUT_SECONDS,
+                                  headers={"Authorization": "Bearer " + settings["LLM_API_KEY"]})
+            if response.status_code != 429 or attempt == RATE_LIMIT_RETRIES:
+                break
+            # Rate limit: wait as long as Groq asks (Retry-After, seconds), at most MAX_WAIT_SECONDS.
+            try:
+                wait = float(response.headers.get("retry-after", 5))
+            except ValueError:
+                wait = 5.0
+            _sleep(min(max(wait, 1.0), MAX_WAIT_SECONDS))
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
     except httpx.TimeoutException:
@@ -107,6 +125,14 @@ def call_llm(query, results, settings):
         raise LLMFailure("http_error") from None   # the original message is dropped on purpose
     except (KeyError, IndexError, TypeError, ValueError):
         raise LLMFailure("bad_json") from None
+
+
+def call_llm(query, results, settings):
+    """The /answer request: system prompt v2 + passages + question. Returns the model's text. Raises LLMFailure."""
+    return complete([
+        {"role": "system", "content": PROMPT_FILE.read_text(encoding="utf-8")},
+        {"role": "user", "content": build_user_message(query, results)},
+    ], settings)
 
 
 def parse_sentences(content):
@@ -145,16 +171,20 @@ def keep_valid(sentences, results):
     return kept
 
 
-def generate_answer(query, results, reason=None, llm=None, settings=None):
-    """See the module docstring. llm(query, results, settings) -> text can be replaced (tests use a fake)."""
+def generate_answer(query, results, reason=None, llm=None, settings=None, confidence=None):
+    """See the module docstring. llm(query, results, settings) -> text can be replaced (tests use a fake).
+    confidence: "high" or "low", as retrieve() returns it (None = unknown, treated as high)."""
     if reason == NO_ANSWER or not results:
         return {"mode": "no_answer", "sentences": [], "fallback_reason": None}
     settings = load_settings() if settings is None else settings
     try:
         content = (llm or call_llm)(query, results, settings)
-        kept = keep_valid(parse_sentences(content), results)
+        sentences = parse_sentences(content)
     except LLMFailure as failure:
         return extractive_answer(results, str(failure))
+    if not sentences and confidence == "low":
+        return {"mode": "no_answer", "sentences": [], "fallback_reason": "llm_refused_low_confidence"}
+    kept = keep_valid(sentences, results)
     if not kept:
         return extractive_answer(results, "no_valid_sentences")
     return {"mode": "llm", "sentences": kept, "fallback_reason": None}

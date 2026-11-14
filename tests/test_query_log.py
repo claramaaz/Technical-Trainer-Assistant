@@ -89,15 +89,33 @@ def test_latency_is_the_real_time_taken(log_db, monkeypatch):
 def test_answer_endpoint_logs_the_answer_mode(log_db, monkeypatch):
     monkeypatch.setattr(app_module, "retrieve", fake_retrieve(TWO_RESULTS))
     monkeypatch.setattr(app_module, "generate_answer",
-                        lambda q, results, reason: {"mode": "extractive", "sentences": [], "fallback_reason": "no_key"})
+                        lambda q, results, reason, **kw: {"mode": "extractive", "sentences": [], "fallback_reason": "no_key"})
     assert client.get("/answer", params={"q": "four forces"}).status_code == 200
     [row] = rows(log_db)
     assert (row["endpoint"], row["outcome"], row["answer_mode"]) == ("answer", "answered", "extractive")
 
 
+def test_llm_refusal_on_a_weak_match_shows_no_figure_and_is_logged_as_unanswered(log_db, monkeypatch):
+    # FR-002 / UC-02 A1 and FR-007: no weak figure is returned, and the analytics count it as unanswered.
+    weak = {**TWO_RESULTS, "confidence": "low"}
+    monkeypatch.setattr(app_module, "retrieve", fake_retrieve(weak))
+    seen = {}
+
+    def refuses(q, results, reason, confidence=None):
+        seen["confidence"] = confidence
+        return {"mode": "no_answer", "sentences": [], "fallback_reason": "llm_refused_low_confidence"}
+    monkeypatch.setattr(app_module, "generate_answer", refuses)
+    r = client.get("/answer", params={"q": "what is the salary of an airline pilot"})
+    assert r.status_code == 200 and seen["confidence"] == "low"
+    assert r.json()["results"] == [] and "confidence" not in r.json()
+    assert r.json()["answer"]["mode"] == "no_answer"
+    [row] = rows(log_db)
+    assert (row["outcome"], row["answer_mode"], row["result_count"]) == ("no_answer", "no_answer", 0)
+
+
 def test_failure_inside_answer_generation_is_logged(log_db, monkeypatch):
     monkeypatch.setattr(app_module, "retrieve", fake_retrieve(TWO_RESULTS))
-    def broken(q, results, reason):
+    def broken(q, results, reason, **kw):
         raise ValueError("bad")
     monkeypatch.setattr(app_module, "generate_answer", broken)
     assert client.get("/answer", params={"q": "four forces"}).status_code == 500
@@ -125,3 +143,25 @@ def test_log_failure_does_not_break_the_search(monkeypatch):
     monkeypatch.setattr(app_module, "retrieve", fake_retrieve(TWO_RESULTS))
     r = client.get("/search", params={"q": "four forces"})
     assert r.status_code == 200 and r.json() == TWO_RESULTS
+
+
+def test_chat_question_is_logged_with_the_searched_question_and_returns_its_id(log_db, monkeypatch):
+    # P7-51 + P7-53: the follow-up is logged as typed, with the standalone question that was searched,
+    # and the response carries the row id so the answer can be rated.
+    turn = {"question": "what happens if the pitot tube is blocked", "follow_ups": [], "rewrite_fallback": None,
+            "answer": {"mode": "llm", "sentences": [], "fallback_reason": None},
+            "results": TWO_RESULTS["results"], "reason": None, "confidence": "high"}
+    monkeypatch.setattr(app_module, "chat_turn", lambda m, h, k: turn)
+    r = client.post("/chat", json={"message": "and if it is blocked?",
+                                   "history": [{"role": "user", "content": "what is a pitot tube"}]})
+    assert r.status_code == 200
+    log_db.commit()
+    row = log_db.execute("SELECT id, endpoint, query, rewritten_query, outcome, answer_mode FROM query_log").fetchone()
+    assert row == (r.json()["query_id"], "chat", "and if it is blocked?",
+                   "what happens if the pitot tube is blocked", "answered", "llm")
+
+
+def test_disabled_log_returns_no_id(monkeypatch):
+    monkeypatch.setattr(query_log, "ENABLED", False)
+    assert query_log.log_query("chat", "q", 5) is None
+

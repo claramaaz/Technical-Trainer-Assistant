@@ -367,6 +367,63 @@ No-answer accuracy is 7/8 (own) and 6/8 (all) in every mode, as expected from th
 
 **Decision.** The live search stays in `text` mode (the default of `RETRIEVAL_MODE`); CLIP is not loaded in that mode, so it costs no memory on the server. The other modes stay in the code, switchable and measured, as evidence. **TO CONFIRM WITH SUPERVISOR:** whether retrieving figures through their caption, citing paragraphs and handbook passages, with the picture-based (CLIP) experiment reported as a measured negative result, satisfies "joint retrieval over text and images".
 
+### 3.8 LLM refusal on a weak match becomes "no answer" (FR-002 fix)
+
+**Problem (found in 3.6 and in the app on 12 Nov).** When the LLM returned no sentence (prompt v2, rule 8: no passage is about the question), `generate_answer` treated it like a failure and fell back to the extractive answer, so the retrieved passages and figures were still shown. Example in the app: "what is the salary of an airline pilot" showed Figure 1-22 of 25C with the low-confidence notice. FR-002 and UC-02 A1 ask for a clear "no answer found" and no weak match.
+
+**Rule (our choice, from our own measures).** In `backend/answer.py`: if the LLM returns no sentence **and** retrieval marked the match as low confidence (best score under 0.70), the answer is `no_answer` (`fallback_reason` = `llm_refused_low_confidence`) and `GET /answer` returns no figure; the query log records it as `no_answer` (FR-007). A refusal on a high-confidence match keeps the extractive answer and the figure. A service failure (timeout, HTTP error, missing key, bad JSON) is unchanged.
+
+**Why not "refusal = no answer" everywhere.** In the 10 Nov v2 run the LLM also refused answerable questions whose figure was right: Q036 (expected figure ranked 1, score 0.80), Q011 (expected figure in the top 5, 0.75), and Q005 on one run (ranked 1, 0.71). Every refused question scoring under 0.70 was either a no-answer question (Q046, Q047) or had no expected figure in the top 5 (Q031, Q032), checked against `evaluation/runs/2026-11-11-text/ranked.csv`.
+
+**Measure.** `python evaluation/prompt_eval.py 2026-11-12-refusal --prompt v2 --runs 1` (same 50 questions, same path as `GET /answer`, git commit acb8c4d + this change).
+
+| Measure | Before (`2026-11-10-prompt-v2`, 3 runs) | After (`2026-11-12-refusal`, 1 run) |
+| --- | --- | --- |
+| No-answer questions answered "no answer" | 18/24 runs = 6/8 questions (Q046, Q047 showed passages) | **8/8** |
+| Answerable questions turned into "no answer" by the new rule | - | 2: Q031, Q032 (neither had the expected figure in the top 5) |
+| Answerable questions refused by the LLM on a confident match, figure kept (extractive) | - | 4: Q006, Q011, Q020, Q036 |
+| Sentences kept / returned (mode `llm`) | 201/202 = 99.5 % | 62/63 = 98.4 % |
+| http_error rows | 0 | 0 (17 calls retried after HTTP 429, all recovered) |
+
+**Reading.** The two no-answer questions that used to show a weak match are now refused, and the two answerable questions that became "no answer" were showing a wrong figure anyway, so no correct figure was lost on this set. Figure-retrieval metrics (3.5) do not change: they are computed by `run_eval.py` on `retrieve()`, before the answer layer.
+
+**Limits.** One run (the LLM is not fully stable, 3.6); 0.70 is the provisional low-confidence threshold chosen on this same set, so the rule is not validated on unseen questions; the human judgements (FR-005) are not done yet. The fix is visible in the app only when the search page calls `GET /answer` (it calls `GET /search` today; frontend task).
+
+### 3.9 The cumulative chat (P7-55; supervisor meeting of 13 Nov)
+
+**What is measured.** The chat (`POST /chat`, `backend/chat.py`, SPEC FR-009) with the live settings: Gemini embeddings (thresholds 0.64 / 0.66), Groq `gpt-oss-120b`, prompts `chat_rewrite_v1` and `chat_answer_v3`, all handbooks. Script `evaluation/chat_eval.py`, run `evaluation/runs/2026-11-14-chat` (part A at 12:09 UTC, part B at 12:41 UTC, commit `c086f4a`), 20 s between questions to stay under Groq's free-tier limits.
+
+**A. The 50 questions as the first message of a chat.**
+
+| Measure | Result |
+| --- | --- |
+| Answer written by the LLM (cited, numeric guard passed) | 39 / 42 answerable |
+| Extractive answer (every LLM sentence removed by the citation or number check) | 3 / 42: Q011, Q036, Q037 (`no_valid_sentences`) |
+| No-answer questions answered "no answer" | **8 / 8** (Q025 by the P7-50 rule: LLM refusal on a low-confidence match) |
+| Answerable questions answered "no answer" | **0 / 42** |
+| First figure = expected, retrieval order (score) | Hit@1 31/42, Hit@5 38/42 |
+| First figure = expected, order shown by the chat (cited figures first) | Hit@1 32/42, Hit@5 38/42 |
+
+Showing the figures cited by the answer first gains one question at rank 1 and loses none.
+
+**B. Follow-up questions.** `evaluation/chat_followups.csv`: 10 pairs "first question -> follow-up with a pronoun" (for example "What is a VOR?" -> "How are its radials represented?"). The expected figure of each follow-up is the expected figure of an existing question of the 50 (column `source_question`). Each follow-up is searched with the history (the real chat: first answer in the history, follow-up rewritten by the LLM) and without it (as a search box).
+
+| Follow-up searched | Hit@1 | Hit@5 |
+| --- | --- | --- |
+| with history (chat, rewritten) | 7 / 10 | **10 / 10** |
+| without history (search box) | 6 / 10 | 7 / 10 |
+
+- The follow-ups whose only topic word is the pronoun fail without history and succeed with it: F07 ("What do its lights show...", PAPI), F08 ("How do I use it...", segmented circle), F09 ("How do I read it?", V-g diagram): not in the top 5 -> rank 1.
+- 9 of the 10 rewrites replaced the pronoun with the right subject. **F04 is wrong:** "if it gets blocked" was rewritten as "if the airspeed indicator gets blocked" instead of the pitot-static system (the expected figure is still at rank 4, same as without history).
+- The rewrite can also move the expected figure down when the follow-up already named its subject: F01 (rate gyro: rank 1 -> 3) and F10 (density altitude: 1 -> 2).
+- No rewrite failed (no fallback).
+
+**Limits.**
+- The 10 pairs were drafted with AI help (Claude) and marked "to review" in the file; they are a small extra set for the chat, not part of the 50-question evaluation set.
+- One run of a language model at temperature 0; the answers can still vary between runs.
+- The quality of the answer text itself (is every sentence supported by its cited passage?) was measured on the earlier prompt (3.6: 15/20 sentences fully supported) but not yet on prompt v3: to do with a human check of a sample of answers.
+- The free tiers limit how fast this can be run (Groq: 8,000 tokens a minute, 200,000 a day; Gemini: about 1,000 embedding requests a day).
+
 ## 4. Deliberate improvement: before and after (Week 10)
 
 ### 4.1 Experiment 1: query reformulation (P7-33)
@@ -405,3 +462,38 @@ Questions that moved (own rank of the expected figure, baseline -> rewrite):
 - No-answer accuracy is unchanged, as designed.
 
 **Decision.** Query reformulation is **not** adopted: the live search stays in `text` mode and calls no LLM before retrieval. The result is reported as measured (SRS UC-06 A2). The next candidate for the deliberate improvement targets the cause found here, the stored text of the figures (whole citing sentences at ingestion), measured on the same 50 questions. **TO CONFIRM WITH SUPERVISOR:** whether a measured negative result can count as the deliberate improvement, or whether a second, positive attempt is expected; and whether an LLM may be used before retrieval at all.
+
+
+### 4.2 Experiment 2: embedding model, bge-small vs Gemini (P7-57, supervisor request of 13 Nov)
+
+**Why this experiment.** At the 13 Nov meeting the supervisor asked for a small hosted embedding model, the same at ingestion and at search time, and said that both OpenAI and Gemini were acceptable: "check which one suits your data best". Section 4.1 also showed that the symptom questions fail because their words do not match the stored text; a stronger embedding model is a direct way to close that vocabulary gap.
+
+**Hypothesis.** `gemini-embedding-001` ranks the expected figure higher than `BAAI/bge-small-en-v1.5` on the same 50 questions, especially on symptom questions, without hurting the no-answer path once its thresholds are set. (Recorded here after the meeting decision but before any threshold was chosen; it was not committed before the run.)
+
+**Method.**
+- Same figure documents as bge (caption + first citing paragraph, `figures.search_text`), embedded with `gemini-embedding-001`, 768 dimensions, task type RETRIEVAL_DOCUMENT; questions embedded with task type RETRIEVAL_QUERY (`backend/embedding.py`, `ingestion/embed_text.py`). Vectors stored next to the bge ones (migration 010), so only the model changes. 849 of 849 figures embedded.
+- Same 50 questions, same `text` mode, same automatic rule (expected figure). Run `evaluation/runs/2026-11-13-gemini`, with both thresholds at 0, so every question returns its top 5 and the scores can be read before choosing thresholds.
+- Baseline = `2026-11-11-text` (bge-small, section 4.1).
+
+**Results (automatic rule; Hit@1 / Hit@5 / MRR@5).**
+
+| Questions | Scope | bge-small (`2026-11-11-text`) | Gemini (`2026-11-13-gemini`) |
+| --- | --- | --- | --- |
+| all 42 answerable | own | 0.643 / 0.833 / 0.720 | **0.881 / 0.929 / 0.905** |
+| topic (30) | own | 0.733 / 0.933 / 0.819 | 0.933 / 0.967 / 0.950 |
+| symptom (12) | own | 0.417 / 0.583 / 0.472 | 0.750 / 0.833 / 0.792 |
+| all 42 answerable | all | 0.524 / 0.786 / 0.639 | **0.738 / 0.905 / 0.808** |
+| topic (30) | all | 0.600 / 0.900 / 0.736 | 0.833 / 0.933 / 0.878 |
+| symptom (12) | all | 0.333 / 0.500 / 0.396 | 0.500 / 0.833 / 0.632 |
+
+Still not in the top 5 with Gemini (both scopes): Q006 (15B 4-7), Q030 (25C 17-5), Q032 (25C 5-17). With both handbooks, a figure of the other handbook is often first (Q001, Q004, Q020, Q022, Q033, Q034): the two handbooks cover the same topics.
+
+**Thresholds (PROVISIONAL).** Gemini scores are on another scale than bge and are compressed (top-1 scores about 0.56-0.82), so the bge thresholds (0.65 / 0.70) cannot be reused. All scope top-1 scores: no-answer questions 0.564-0.652 (highest Q025 0.652, then Q047 0.639); lowest correct answerable 0.645 (Q005, Q027). Chosen: **no answer below 0.64, low confidence below 0.66** (`MODEL_THRESHOLDS` in `backend/retrieval.py`). Expected effect on this set: 7/8 no-answer questions refused, no answerable question refused; Q025, Q005, Q027 and Q032 shown with the low-confidence notice, and in the chat the P7-50 rule turns an LLM refusal on a low-confidence match (expected for Q025) into "no answer". Confirmed by the run with these thresholds (`2026-11-13-gemini-t`, 13 Nov): no-answer accuracy 7/8 in both scopes (Q025 answered, with the low-confidence notice), 0/42 answerable questions refused; Hit@1 / Hit@5 / MRR unchanged (thresholds only decide whether to answer).
+
+**Limits.**
+- The thresholds were chosen on the same 50 questions they are tested on (same limit as bge, section 3.5); the margin is very small (0.645 vs 0.652).
+- Automatic rule only; the human judgements (`judgements.csv`, 397 pairs still to judge) are not done yet.
+- Gemini is a hosted API: each question costs one request (free tier) and adds network time; if the API fails, the question fails (no local fallback yet).
+- One run (embeddings are deterministic, so a re-run should give the same ranking).
+
+**Decision.** `gemini-embedding-001` replaces bge-small for ingestion and search (`EMBEDDING_MODEL=gemini-embedding-001`); the answer is still written by Groq `gpt-oss-120b`. bge-small vectors are kept in the database for the comparison. OpenAI `text-embedding-3-small` was not measured (paid account needed); it can be compared the same way with `ingestion/embed_text.py text-embedding-3-small`.

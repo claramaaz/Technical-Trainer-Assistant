@@ -27,7 +27,16 @@ how the figures are ranked:
                RRF. If the rewrite fails, the original question alone is used (same as "text").
 In every mode the "no answer" decision and the confidence use the TEXT similarity of the best text
 match, the score the thresholds were set on: the image score of CLIP is on another scale.
+
+Text embedding model (P7-57, supervisor 13 Nov 2026). EMBEDDING_MODEL (environment or .env) chooses
+the model of the TEXT vectors, for the question and for the stored figures/chunks (backend/embedding.py):
+bge-small (default, figures.embedding) or an API model (gemini-embedding-001, text-embedding-3-small,
+stored in figure_text_embeddings / chunk_text_embeddings, migration 010). Every model has its own
+thresholds (thresholds()): cosine scores are on a different scale for each model.
 """
+import contextvars
+import json
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -44,6 +53,8 @@ sys.path.insert(0, str(ROOT / "ingestion"))
 # connection settings are the ones the loader uses.
 from baseline_retrieval import QUERY_PREFIX, load_model  # noqa: E402
 from migrate import connection_string, read_env_file  # noqa: E402
+
+from backend import embedding  # noqa: E402
 
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
@@ -77,6 +88,19 @@ THRESHOLD = 0.65
 LOW_CONFIDENCE_BELOW = 0.70
 
 NO_ANSWER = "no_adequate_answer"
+
+# P7-57: (THRESHOLD, LOW_CONFIDENCE_BELOW) of each API model, set on the 50-question run of that model
+# and recorded in EVALUATION.md. None = not calibrated yet: RETRIEVAL_THRESHOLD and
+# RETRIEVAL_LOW_CONFIDENCE (environment or .env) must then be given (0 = answer everything, to
+# collect the scores of a first evaluation run).
+MODEL_THRESHOLDS = {
+    # PROVISIONAL, set on run 2026-11-13-gemini (thresholds 0, EVALUATION 4.2), the same 50 questions they
+    # are tested on. All scope top-1: highest no-answer 0.652 (Q025), then 0.639 (Q047); lowest correct
+    # answerable 0.645 (Q005, Q027). Below 0.64 = no answer; 0.64-0.66 = low confidence (Q025 lands
+    # there, and the P7-50 rule turns an LLM refusal on it into "no answer").
+    "gemini-embedding-001": (0.64, 0.66),
+    "text-embedding-3-small": None,
+}
 
 
 @dataclass
@@ -124,6 +148,28 @@ CHUNK_RANK_SQL = """
       AND (%(handbooks)s::text[] IS NULL OR document_id = ANY(%(handbooks)s::text[]))
     ORDER BY embedding <=> %(q)s, id
     LIMIT %(k)s"""
+
+# P7-57: the same three queries on the vectors of an API model (010_text_embeddings.sql).
+RANK_SQL_API = """
+    SELECT id, 1 - (embedding <=> %(q)s) AS score
+    FROM searchable_figure_text
+    WHERE model = %(model)s
+      AND (%(handbooks)s::text[] IS NULL OR document_id = ANY(%(handbooks)s::text[]))
+    ORDER BY embedding <=> %(q)s, id
+    LIMIT %(k)s"""
+
+CHUNK_RANK_SQL_API = """
+    SELECT document_id, figure_mentions, 1 - (embedding <=> %(q)s) AS score
+    FROM searchable_chunk_text
+    WHERE model = %(model)s AND cardinality(figure_mentions) > 0
+      AND (%(handbooks)s::text[] IS NULL OR document_id = ANY(%(handbooks)s::text[]))
+    ORDER BY embedding <=> %(q)s, id
+    LIMIT %(k)s"""
+
+TEXT_SCORE_SQL_API = """
+    SELECT id, 1 - (embedding <=> %(q)s) AS score
+    FROM searchable_figure_text
+    WHERE model = %(model)s AND id = ANY(%(ids)s::bigint[])"""
 
 # Text similarity of given figures: a figure brought in by the image list only still needs its
 # text score for the threshold and for display.
@@ -181,8 +227,76 @@ def _model():
     return load_model(MODEL_NAME)
 
 
+# Set only inside retrieve() when the API model failed: that one search uses bge-small instead.
+_model_override = contextvars.ContextVar("text_model_override", default=None)
+
+# Question vectors of an API model already asked, kept on disk (data/ is not in Git): the free tiers
+# limit the requests per day, and the evaluation asks the same 50 questions again and again.
+# None = no cache (tests/conftest.py sets None, so tests never read or write it).
+QUERY_CACHE = ROOT / "data" / "cache" / "query_embeddings.jsonl"
+_query_cache = None
+
+
+def text_model():
+    """The text embedding model of this search (EMBEDDING_MODEL; default bge-small). See backend/embedding.py."""
+    return _model_override.get() or embedding.configured_model()
+
+
+def _cache():
+    global _query_cache
+    if _query_cache is None:
+        _query_cache = {}
+        if QUERY_CACHE is not None and QUERY_CACHE.exists():
+            for line in QUERY_CACHE.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    item = json.loads(line)
+                    _query_cache[(item["model"], item["text"])] = item["vector"]
+    return _query_cache
+
+
+def _api_query_vector(model, query):
+    import numpy as np
+    key = (model, query)
+    if QUERY_CACHE is not None and key in _cache():
+        return np.asarray(_cache()[key], dtype=np.float32)
+    vector = embedding.embed_api(model, [query], "query")[0]
+    if QUERY_CACHE is not None:
+        _cache()[key] = vector.tolist()
+        QUERY_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        with open(QUERY_CACHE, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"model": model, "text": query, "vector": vector.tolist()}) + "\n")
+    return vector
+
+
 def embed_query(query):
+    model = text_model()
+    if embedding.is_api_model(model):
+        return _api_query_vector(model, query)
     return _model().encode([QUERY_PREFIX + query], normalize_embeddings=True)[0]
+
+
+def thresholds(model=None):
+    """(no-answer threshold, low-confidence limit) of the text model. bge-small: THRESHOLD and
+    LOW_CONFIDENCE_BELOW above. API model: MODEL_THRESHOLDS, or RETRIEVAL_THRESHOLD and
+    RETRIEVAL_LOW_CONFIDENCE when given (they win, so a new value can be tried without editing code)."""
+    model = model or text_model()
+    if not embedding.is_api_model(model):
+        return THRESHOLD, LOW_CONFIDENCE_BELOW
+    given = (embedding.setting("RETRIEVAL_THRESHOLD"), embedding.setting("RETRIEVAL_LOW_CONFIDENCE"))
+    if all(given):
+        return float(given[0]), float(given[1])
+    if MODEL_THRESHOLDS.get(model) is None:
+        raise ValueError(f"no thresholds for {model} yet: set RETRIEVAL_THRESHOLD and "
+                         "RETRIEVAL_LOW_CONFIDENCE in .env (0 and 0 for a first evaluation run)")
+    return MODEL_THRESHOLDS[model]
+
+
+def _text_sql(local_sql, api_sql, params):
+    """The SQL and parameters for the configured text model, and the model name."""
+    model = text_model()
+    if embedding.is_api_model(model):
+        return api_sql, dict(params, model=model), model
+    return local_sql, params, model
 
 
 def retrieval_mode(environ=None, env_file=None):
@@ -211,8 +325,12 @@ def rank(index, query_vector, k, handbooks=None):
 
     handbooks: optional list of handbook (document) ids to search in; None = all handbooks."""
     handbooks = list(handbooks) if handbooks is not None else None
+    sql, params, model = _text_sql(RANK_SQL, RANK_SQL_API, {"q": query_vector, "k": k, "handbooks": handbooks})
     with connect(index.dsn) as conn:
-        rows = conn.execute(RANK_SQL, {"q": query_vector, "k": k, "handbooks": handbooks}).fetchall()
+        rows = conn.execute(sql, params).fetchall()
+    if not rows and embedding.is_api_model(model) and index.documents:
+        # A silent empty list would look like "no answer" for every question and spoil a run.
+        raise RuntimeError(f"no {model} embedding in the database: run python ingestion/embed_text.py {model}")
     return [(int(fid), float(score)) for fid, score in rows]
 
 
@@ -248,8 +366,10 @@ def figures_from_chunks(chunk_rows, index):
 def rank_chunks(index, query_vector, k, handbooks=None):
     """The figures cited by the k chunks nearest to the question: [(figure id, chunk score)]."""
     handbooks = list(handbooks) if handbooks is not None else None
+    sql, params, _model_name = _text_sql(CHUNK_RANK_SQL, CHUNK_RANK_SQL_API,
+                                         {"q": query_vector, "k": k, "handbooks": handbooks})
     with connect(index.dsn) as conn:
-        rows = conn.execute(CHUNK_RANK_SQL, {"q": query_vector, "k": k, "handbooks": handbooks}).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return figures_from_chunks(rows, index)
 
 
@@ -257,8 +377,9 @@ def text_scores(index, query_vector, ids):
     """{figure id: text similarity} for the given ids."""
     if not ids:
         return {}
+    sql, params, _model_name = _text_sql(TEXT_SCORE_SQL, TEXT_SCORE_SQL_API, {"q": query_vector, "ids": list(ids)})
     with connect(index.dsn) as conn:
-        rows = conn.execute(TEXT_SCORE_SQL, {"q": query_vector, "ids": list(ids)}).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return {int(fid): float(score) for fid, score in rows}
 
 
@@ -279,7 +400,7 @@ def rank_query(index, query, query_vector, k, handbooks=None, mode=None, reformu
 
     Returns (ranked, best_text_score): ranked = [(figure id, TEXT similarity)] in the order of the
     mode; best_text_score = the text similarity of the best TEXT match (for the threshold).
-    query_vector is the bge vector of the question (the evaluation computes it once).
+    query_vector is the vector of the question with the configured text model (the evaluation computes it once).
     reformulated: the rewritten question ("reformulated" mode only); None = use the original only."""
     mode = mode or retrieval_mode()
     if mode not in MODES:
@@ -327,12 +448,27 @@ def retrieve(query, k=5, index=None, query_vector=None, handbooks=None, mode=Non
     """
     index = index or load_index()
     if query_vector is None:
-        query_vector = embed_query(query)
+        try:
+            query_vector = embed_query(query)
+        except embedding.EmbeddingError as exc:
+            if _model_override.get() is not None or not embedding.is_api_model(text_model()):
+                raise
+            # NFR reliability: the API model is down or out of quota. This search uses the bge-small
+            # vectors still stored in the database, with bge's thresholds, instead of failing.
+            logging.getLogger("uvicorn.error").warning("embedding API failed (%s): this search uses %s",
+                                                       exc, embedding.LOCAL_MODEL)
+            token = _model_override.set(embedding.LOCAL_MODEL)
+            try:
+                found = retrieve(query, k, index, None, handbooks, mode, reformulated)
+            finally:
+                _model_override.reset(token)
+            return dict(found, embedding_fallback=embedding.LOCAL_MODEL)
     mode = mode or retrieval_mode()
     if mode == "reformulated" and reformulated is None:
         reformulated = _live_reformulation(index, query, query_vector, handbooks)
     ranked, best_text = rank_query(index, query, query_vector, k, handbooks, mode, reformulated)
-    if not ranked or best_text is None or best_text < THRESHOLD:
+    threshold, low_below = thresholds()
+    if not ranked or best_text is None or best_text < threshold:
         return {"results": [], "reason": NO_ANSWER}
     results = []
     for i, score in ranked:
@@ -354,14 +490,14 @@ def retrieve(query, k=5, index=None, query_vector=None, handbooks=None, mode=Non
             "source_pdf_url": (f"{d['source_url']}#page={d['pdf_page']}"
                                if d.get("source_url") and d.get("pdf_page") else None),
         })
-    confidence = "low" if best_text < LOW_CONFIDENCE_BELOW else "high"
+    confidence = "low" if best_text < low_below else "high"
     return {"results": results, "reason": None, "confidence": confidence}
 
 
 def _live_reformulation(index, query, query_vector, handbooks):
     """The rewritten question for a live search, or None (refused anyway, or the LLM failed)."""
     first = rank(index, query_vector, 1, handbooks)
-    if not first or first[0][1] < THRESHOLD:
+    if not first or first[0][1] < thresholds()[0]:
         return None
     from backend.reformulate import reformulate   # here: backend.reformulate imports this module
     prompt = os.environ.get("REFORMULATE_PROMPT") or read_env_file(ROOT / ".env").get("REFORMULATE_PROMPT") or "v1"
