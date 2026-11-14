@@ -389,6 +389,41 @@ No-answer accuracy is 7/8 (own) and 6/8 (all) in every mode, as expected from th
 
 **Limits.** One run (the LLM is not fully stable, 3.6); 0.70 is the provisional low-confidence threshold chosen on this same set, so the rule is not validated on unseen questions; the human judgements (FR-005) are not done yet. The fix is visible in the app only when the search page calls `GET /answer` (it calls `GET /search` today; frontend task).
 
+### 3.9 The cumulative chat (P7-55; supervisor meeting of 13 Nov)
+
+**What is measured.** The chat (`POST /chat`, `backend/chat.py`, SPEC FR-009) with the live settings: Gemini embeddings (thresholds 0.64 / 0.66), Groq `gpt-oss-120b`, prompts `chat_rewrite_v1` and `chat_answer_v3`, all handbooks. Script `evaluation/chat_eval.py`, run `evaluation/runs/2026-11-14-chat` (part A at 12:09 UTC, part B at 12:41 UTC, commit `c086f4a`), 20 s between questions to stay under Groq's free-tier limits.
+
+**A. The 50 questions as the first message of a chat.**
+
+| Measure | Result |
+| --- | --- |
+| Answer written by the LLM (cited, numeric guard passed) | 39 / 42 answerable |
+| Extractive answer (every LLM sentence removed by the citation or number check) | 3 / 42: Q011, Q036, Q037 (`no_valid_sentences`) |
+| No-answer questions answered "no answer" | **8 / 8** (Q025 by the P7-50 rule: LLM refusal on a low-confidence match) |
+| Answerable questions answered "no answer" | **0 / 42** |
+| First figure = expected, retrieval order (score) | Hit@1 31/42, Hit@5 38/42 |
+| First figure = expected, order shown by the chat (cited figures first) | Hit@1 32/42, Hit@5 38/42 |
+
+Showing the figures cited by the answer first gains one question at rank 1 and loses none.
+
+**B. Follow-up questions.** `evaluation/chat_followups.csv`: 10 pairs "first question -> follow-up with a pronoun" (for example "What is a VOR?" -> "How are its radials represented?"). The expected figure of each follow-up is the expected figure of an existing question of the 50 (column `source_question`). Each follow-up is searched with the history (the real chat: first answer in the history, follow-up rewritten by the LLM) and without it (as a search box).
+
+| Follow-up searched | Hit@1 | Hit@5 |
+| --- | --- | --- |
+| with history (chat, rewritten) | 7 / 10 | **10 / 10** |
+| without history (search box) | 6 / 10 | 7 / 10 |
+
+- The follow-ups whose only topic word is the pronoun fail without history and succeed with it: F07 ("What do its lights show...", PAPI), F08 ("How do I use it...", segmented circle), F09 ("How do I read it?", V-g diagram): not in the top 5 -> rank 1.
+- 9 of the 10 rewrites replaced the pronoun with the right subject. **F04 is wrong:** "if it gets blocked" was rewritten as "if the airspeed indicator gets blocked" instead of the pitot-static system (the expected figure is still at rank 4, same as without history).
+- The rewrite can also move the expected figure down when the follow-up already named its subject: F01 (rate gyro: rank 1 -> 3) and F10 (density altitude: 1 -> 2).
+- No rewrite failed (no fallback).
+
+**Limits.**
+- The 10 pairs were drafted with AI help (Claude) and marked "to review" in the file; they are a small extra set for the chat, not part of the 50-question evaluation set.
+- One run of a language model at temperature 0; the answers can still vary between runs.
+- The quality of the answer text itself (is every sentence supported by its cited passage?) was measured on the earlier prompt (3.6: 15/20 sentences fully supported) but not yet on prompt v3: to do with a human check of a sample of answers.
+- The free tiers limit how fast this can be run (Groq: 8,000 tokens a minute, 200,000 a day; Gemini: about 1,000 embedding requests a day).
+
 ## 4. Deliberate improvement: before and after (Week 10)
 
 ### 4.1 Experiment 1: query reformulation (P7-33)
