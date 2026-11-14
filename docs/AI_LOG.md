@@ -500,3 +500,9 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **What Claude did NOT do:** the y/n judgements (caption, page, image) were made by Clara by comparing each image with the PDF.
 - **Result:** 50/50 on caption, page and image completeness (Wilson 95 %: about 93-100 %). Judged file: `evaluation/check_sample_FAA-H-8083-15B_v6_n50.csv`.
 - **Commit / PR:** branch `feature/P7-51-chat`
+
+### 14 Nov, provenance check of returned figures
+- **What Claude did:** wrote `evaluation/provenance_check.py` (samples 30 first-ranked figures of a run, shows the cited PDF page, script pre-check, merge of the human answers) and section 3.10 of EVALUATION.md.
+- **What Claude did NOT do:** the y/n judgements, made by Clara on the page images.
+- **Result:** 30/30 (pre-check also 30/30). **How we checked it:** script run on Clara's PC; every page image path verified to exist; no unit test yet for this script.
+- **Commit / PR:** branch `feature/P7-51-chat`

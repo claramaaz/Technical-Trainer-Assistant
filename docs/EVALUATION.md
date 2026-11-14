@@ -436,6 +436,19 @@ Showing the figures cited by the answer first gains one question at rank 1 and l
 - The quality of the answer text itself (is every sentence supported by its cited passage?) was measured on the earlier prompt (3.6: 15/20 sentences fully supported) but not yet on prompt v3: to do with a human check of a sample of answers.
 - The free tiers limit how fast this can be run (Groq: 8,000 tokens a minute, 200,000 a day; Gemini: about 1,000 embedding requests a day).
 
+### 3.10 Provenance correctness of returned figures (SPEC 5.3, UC-06 step 6)
+
+**Method.** Sample: the figures the live search returned FIRST for an answerable question in run `2026-11-13-gemini-t` (Gemini, scope "all", the real search): 42 distinct figures, 30 drawn at random (seed 5) with `python evaluation/provenance_check.py build 2026-11-13-gemini-t`. The "cited page" is the printed page the system shows next to the figure (from the database). For each figure the page image of the cited PDF page was shown; the judge answered y if the figure is on that page AND the page number printed in its header/footer is the cited one. A script pre-check ran first (caption "Figure N-N." in the PDF page text; cited number present as a line of that page); it is a help, not the measure.
+
+| Measure | Result |
+| --- | --- |
+| Sample | 30 returned figures (16 from 15B, 14 from 25C), seed 5 |
+| Script pre-check (caption on page / number on page) | 30/30 / 30/30 |
+| **Provenance correctness (human)** | **30/30 = 100 %** (95 % Wilson interval about 89-100 %) |
+| Judged by / date | Clara, 2026-11-14 |
+
+Judged sample: [`evaluation/provenance_2026-11-13-gemini-t.csv`](../evaluation/provenance_2026-11-13-gemini-t.csv). Limit: only first-ranked figures; the page of a figure is fixed at ingestion and does not depend on the embedding model, so the same rate holds before and after the improvement of 4.2 (same figures table).
+
 ## 4. Deliberate improvement: before and after (Week 10)
 
 ### 4.1 Experiment 1: query reformulation (P7-33)
