@@ -9,7 +9,7 @@
 | Course | Software Engineering — ESIB, Université Saint-Joseph |
 | Team Members | Mia Badran – Clara Maaz |
 | Instructor / Supervisor | Mr. Georges Salloum |
-| Version | 1.3 |
+| Version | 1.4 |
 | Date / Status | 19/10/2026 — Baseline, tagged `spec-v1` before the first implementation commit |
 
 ### 1.1 Change log
@@ -21,6 +21,7 @@
 | 1.1 | 28/10/2026 | 5.1: chunk size cap set to 200 words from the measurement of FAA-H-8083-15B; embedding model must accept ≥ 512 tokens; content covered by chunking listed. |
 | 1.2 | 06/11/2026 | 2.5: embedding model (BAAI/bge-small-en-v1.5, 384 dimensions) and language model (Groq) recorded, as 2.5 required once chosen. 5.1: the image embedding of each figure is required, not optional, to match the brief (sections 4 and 7, joint retrieval over text and images). FR-008 priority Should -> Must, because the brief assesses re-indexing in the administrative interface (section 12). |
 | 1.3 | 14/11/2026 | Decisions of the supervisor meeting of 13 Nov 2026. FR-009: the learner page is a cumulative chat (each question is sent with the conversation, follow-up questions are understood, 3 suggested follow-up questions); the answer is written by the language model from the retrieved passages only and always comes with the figure(s) and their sources. New FR-010: good / bad rating of each answer. FR-001 and UC-01: the admin uploads the handbook PDF from the web interface and the ingestion runs as a background job (queued / running / done / failed). 2.5: the embedding model is now Gemini `gemini-embedding-001` (768 dimensions), chosen by measurement on the 50 questions as the supervisor asked ("OpenAI or Gemini, check which suits your data best", EVALUATION 4.2); bge-small is kept as a fallback when the API fails. **Divergence from 1.2 (5.1, image embedding required):** the CLIP image embedding was built and measured (EVALUATION 3.7) and lowered retrieval (Hit@1 0.071 alone, 0.167 fused with text, vs 0.643 text), so it is kept out of the live search; the figures are found through their caption and citing passages. TO CONFIRM WITH SUPERVISOR. |
+| 1.4 | 18/11/2026 | Supervisor decision of 18 Nov 2026: handbooks are added only by uploading the PDF from the admin interface (FR-001, UC-01 as in 1.3). The original SRS flow of UC-01 (the admin picks a handbook from the FAA index, the system shows its size and downloads it itself) is dropped from the scope. UC-01 summary and A1 aligned with the upload flow. |
 
 Any later divergence from this document is recorded in this change log with its reason.
 
@@ -299,7 +300,7 @@ Sample sizes, the random seed used to draw samples, and all results are recorded
 
 | ID | Actor | Use case and main flow | Requirement |
 | --- | --- | --- | --- |
-| UC-01 | Admin | Load a handbook. The admin starts ingestion for an FAA handbook; the system downloads the PDF, extracts text and figures, binds each figure to its caption and referencing paragraph, tags it, records the licence, and stores everything in the database. | FR-001 |
+| UC-01 | Admin | Load a handbook. The admin uploads an FAA handbook PDF and the ingestion starts; the system checks the PDF, extracts text and figures, binds each figure to its caption and referencing paragraph, tags it, records the licence, and stores everything in the database. | FR-001 |
 | UC-02 | Learner | Ask a question. The learner types a topic or symptom; the system searches text and figures together and shows the procedure text with the correct diagram, handbook name and page number, or a clear "no answer found" message. | FR-002, FR-009 |
 | UC-03 | Learner | Flag a wrong figure. The learner marks a returned figure as incorrect; it is added to the admin review queue. | FR-003 |
 | UC-04 | Admin | Review and correct figures. The admin opens the review queue, checks a flagged figure against the handbook page, corrects its caption, page or reference link (or removes it), and views handbook and chapter coverage. | FR-003 |
@@ -321,7 +322,7 @@ Sample sizes, the random seed used to draw samples, and all results are recorded
 | Preconditions | Admin is logged in. The handbook is listed on the FAA handbooks index (or is another source approved by the supervisor). |
 | Trigger | Admin chooses "Upload" in the Sources panel of the admin area (supervisor, 13 Nov). |
 | Main flow | 1. Admin chooses the handbook PDF (downloaded from the FAA index) and types its id, title, source URL, licence and retrieval date. 2. System checks the form and the file (a PDF, at most 300 MB) and stores it. 3. System starts the ingestion as a background job and shows its status (queued, running, done, failed) and current step. 4. System records the source URL, licence and retrieval date. 5. System extracts the text of each page, its printed page number, and the figures. 6. System detects each caption and figure number and binds every figure to its caption and to the page it appears on. 7. System finds the paragraphs that reference each figure and links them to it. 8. System tags each figure (at least figure number and chapter). 9. System chunks the text (5.1) and makes the content searchable (embeddings stored in the database). 10. System shows an ingestion report: pages processed, figures extracted, captions bound, figures without caption. |
-| Alternative / exception flows | A1. URL unreachable or file is not a valid PDF: the system shows the error and stores nothing. A2. Licence cannot be determined: the document is not made searchable until the admin supplies it (BR-001). A3. A figure has no detectable caption: it is stored as "unbound" and added to the QA queue (UC-04). A4. Ingestion fails part-way: status is "Failed", partial content is not searchable, the admin can retry. A5. The document was already ingested: the system asks whether to cancel or re-ingest. |
+| Alternative / exception flows | A1. The file is not a valid PDF or is too large: the system shows the error and stores nothing. A2. Licence cannot be determined: the document is not made searchable until the admin supplies it (BR-001). A3. A figure has no detectable caption: it is stored as "unbound" and added to the QA queue (UC-04). A4. Ingestion fails part-way: status is "Failed", partial content is not searchable, the admin can retry. A5. The document was already ingested: the system asks whether to cancel or re-ingest. |
 | Postconditions | The document, its pages, text, figures, captions, references and licence are stored and searchable, and the report is available to the admin. |
 
 ##### UC-02 - Ask a question
