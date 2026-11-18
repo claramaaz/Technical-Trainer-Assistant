@@ -1,4 +1,4 @@
-"""FastAPI app: POST /login, POST /chat, POST/GET /admin/documents, GET /admin/ingestion-jobs/{id}, POST /flags, GET /admin/flags, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
+"""FastAPI app: POST /login, POST /chat, POST /ratings, GET /admin/analytics, POST/GET /admin/documents, GET /admin/ingestion-jobs/{id}, POST /flags, GET /admin/flags, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
 GET /figures/{id}/page-image, GET /health,
 and the React page at /
 (the built files in frontend/dist; create them with: cd frontend && npm run build).
@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend import auth, embedding, flags, ingest_jobs, retrieval
+from backend import analytics, auth, embedding, flags, ingest_jobs, ratings, retrieval
 from backend.answer import generate_answer
 from backend.chat import chat_turn
 from backend.query_log import elapsed_ms, log_query
@@ -216,6 +216,35 @@ def chat(body: ChatBody):
                                  answer_mode=turn["answer"]["mode"],
                                  rewritten_query=turn["question"] if turn["question"] != message else None)
     return turn
+
+
+class RatingBody(BaseModel):
+    query_id: int = Field(ge=1)               # the query_id returned by POST /chat with the answer
+    rating: Literal["good", "bad"]
+
+
+@app.post("/ratings")
+def rate_answer(body: RatingBody, user=Depends(auth.current_user)):
+    # P7-53 (FR-010): a learner marks a chat answer as a good or a bad response. Rating the same
+    # answer again replaces the first rating (one rating per user and answer).
+    result = ratings.save_rating(body.query_id, user["id"], body.rating)
+    if result == ratings.UNKNOWN_ANSWER:
+        raise HTTPException(status_code=404, detail="answer not found")
+    if result == ratings.UNKNOWN_USER:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return {"status": "saved", "rating": body.rating}
+
+
+@app.get("/admin/analytics")
+def admin_analytics(start: str = Query(..., alias="from"), end: str = Query(..., alias="to"),
+                    user=Depends(auth.require_admin)):
+    # P7-43 (FR-007, UC-09, FR-010): volume, latency, failure rate, unanswered questions and the
+    # bad responses for the days from..to (included, UTC). Admins only (403 for a Learner).
+    try:
+        period = analytics.check_period(analytics.parse_day(start, "from"), analytics.parse_day(end, "to"))
+    except analytics.PeriodError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    return analytics.summary(*period)
 
 
 @app.post("/admin/documents", status_code=202)

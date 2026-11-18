@@ -24,7 +24,7 @@ NO_ANSWER = {"results": [], "reason": "no_adequate_answer"}
 @pytest.fixture
 def log_db(db, pg_test_dsn, monkeypatch):
     """Empty query_log in the temporary database; the app logs there."""
-    db.execute("TRUNCATE query_log")
+    db.execute("TRUNCATE query_log CASCADE")   # CASCADE: answer_ratings (012) refers to it
     db.commit()
     monkeypatch.setattr(query_log, "DSN", pg_test_dsn)
     monkeypatch.setattr(query_log, "ENABLED", True)

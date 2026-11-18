@@ -51,7 +51,7 @@ def test_outcome_names():
 
 
 def test_low_confidence_is_logged_as_its_own_outcome(db, pg_test_dsn, monkeypatch):
-    db.execute("TRUNCATE query_log")
+    db.execute("TRUNCATE query_log CASCADE")   # CASCADE: answer_ratings (012) refers to it
     db.commit()
     monkeypatch.setattr(query_log, "DSN", pg_test_dsn)
     monkeypatch.setattr(query_log, "ENABLED", True)
