@@ -10,6 +10,10 @@ import { useState } from "react";
 // In "extractive" mode the server quotes every sentence of the returned passages, which is too long
 // to read on a phone: only the sentences about the main figure are kept, QUOTED_SHOWN at first.
 const QUOTED_SHOWN = 3;
+// The language model sometimes copies the passage ids it was given into the sentence ("... drag. [55]").
+// They mean nothing to a learner (the Fig. chips already show the source), so they are removed.
+const ID_MARKERS = /\s*\[(?:\d+\s*,?\s*)+\]/g;
+const clean = (text) => text.replace(ID_MARKERS, "").trim();
 
 export default function AnswerText({ answer, results, onOpenSource }) {
   const [expanded, setExpanded] = useState(false);
@@ -49,7 +53,7 @@ export default function AnswerText({ answer, results, onOpenSource }) {
         <p>
           {shown.map((s, i) => (
             <span key={i}>
-              {s.text} {cites(s)}{" "}
+              {clean(s.text)} {cites(s)}{" "}
             </span>
           ))}
         </p>
@@ -63,7 +67,7 @@ export default function AnswerText({ answer, results, onOpenSource }) {
       <ul>
         {shown.map((s, i) => (
           <li key={i}>
-            {s.text} {cites(s)}
+            {clean(s.text)} {cites(s)}
           </li>
         ))}
       </ul>
