@@ -37,6 +37,12 @@
 .cite:hover { border-color: var(--navy-2); }
 
 .answer-plate { margin: 0; box-shadow: var(--shadow); }
+.plate-passage {
+  margin: 10px 0 0; padding: 2px 0 2px 12px; border-left: 3px solid #c3d0e3;
+  color: #2b3542; font-size: 15px; line-height: 1.6;
+}
+.plate-passage p { margin: 0; overflow-wrap: anywhere; }
+.plate-passage .btn-text { padding-left: 0; }
 .plate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 10px; }
 .btn-small { min-height: 34px; padding: 5px 12px; font-size: 14px; }
 

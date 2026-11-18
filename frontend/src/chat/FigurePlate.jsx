@@ -3,7 +3,7 @@ import WrongFigure from "../WrongFigure.jsx";
 import { Caption } from "./caption.jsx";
 
 // The main figure of an answer (UC-02 step 6): the handbook's own image, its caption as the handbook
-// prints it, the handbook and printed page, "View source" (UC-07) and "Wrong figure" (UC-03).
+// prints it, the handbook and printed page, the handbook paragraph that refers to it, "View source" (UC-07) and "Wrong figure" (UC-03).
 //
 // UC-02 A4 / NFR-001: the text is painted first; the image request starts one frame later, with a
 // placeholder of the same size so nothing jumps. The thumbnail is used when there is one; the
@@ -51,6 +51,7 @@ export default function FigurePlate({ result, query, onOpenSource, onSessionExpi
         <p className="plate-source">
           {result.handbook}, <span className="page">page {result.printed_page}</span>
         </p>
+        {result.passage && <Passage text={result.passage} />}
         <div className="plate-actions">
           <button type="button" className="btn btn-quiet btn-small" onClick={() => onOpenSource(result)}>
             View source
@@ -59,5 +60,25 @@ export default function FigurePlate({ result, query, onOpenSource, onSessionExpi
         </div>
       </figcaption>
     </figure>
+  );
+}
+
+// The handbook paragraph that refers to the figure (the "source passage" of the old search page),
+// quoted as it is. A long paragraph is cut after PASSAGE_SHOWN characters with a button for the rest.
+const PASSAGE_SHOWN = 420;
+
+function Passage({ text }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > PASSAGE_SHOWN;
+  const shown = long && !open ? text.slice(0, text.lastIndexOf(" ", PASSAGE_SHOWN)) + "…" : text;
+  return (
+    <blockquote className="plate-passage">
+      <p>{shown}</p>
+      {long && (
+        <button type="button" className="btn-text" onClick={() => setOpen(!open)} aria-expanded={open}>
+          {open ? "Show less" : "Read the whole paragraph"}
+        </button>
+      )}
+    </blockquote>
   );
 }
