@@ -9,6 +9,9 @@
 .qa-caption { font-weight: 600; font-size: 15px; }
 .qa-label { font-weight: 600; }
 .qa-meta { color: var(--muted); font-size: 13px; }
+.qa-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 8px; }
+.qa-help { margin-top: 16px; font-size: 14px; }
+.btn-small { min-height: 34px; padding: 5px 12px; font-size: 14px; }
 .figure-number {
   display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px;
   background: var(--navy-tint); color: var(--navy); font-weight: 600; font-size: 13px;

@@ -1,4 +1,4 @@
-"""FastAPI app: POST /login, POST /chat, POST /ratings, GET /admin/analytics, POST/GET /admin/documents, GET /admin/ingestion-jobs/{id}, POST /flags, GET /admin/flags, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
+"""FastAPI app: POST /login, POST /chat, POST /ratings, GET /admin/analytics, POST/GET /admin/documents, GET /admin/ingestion-jobs/{id}, POST /flags, GET /admin/flags, POST /admin/flags/{id}/dismiss, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
 GET /figures/{id}/page-image, GET /health,
 and the React page at /
 (the built files in frontend/dist; create them with: cd frontend && npm run build).
@@ -144,6 +144,20 @@ def flag_figure(body: FlagBody, response: Response, user=Depends(auth.current_us
 def admin_flags(user=Depends(auth.require_admin)):
     # The open reports for the QA queue page (FR-003). Admins only (403 for a Learner).
     return {"flags": flags.open_flags()}
+
+
+class DismissBody(BaseModel):
+    all_for_figure: bool = False    # also close the other open reports of the same figure
+
+
+@app.post("/admin/flags/{flag_id}/dismiss")
+def admin_dismiss_flag(flag_id: int, body: DismissBody | None = None, user=Depends(auth.require_admin)):
+    # UC-04: the Admin checked the figure and it is right: the report leaves the QA queue (kept in the
+    # table as resolved / dismissed, with who and when). Admins only (403 for a Learner).
+    count = flags.dismiss_flag(flag_id, user["id"], all_for_figure=bool(body and body.all_for_figure))
+    if count == 0:
+        raise HTTPException(status_code=404, detail="report not found or already closed")
+    return {"status": "dismissed", "count": count}
 
 
 @app.get("/search", dependencies=[Depends(auth.current_user)])

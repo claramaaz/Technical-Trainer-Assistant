@@ -5,6 +5,9 @@ save_flag   stores one report (UC-03 step 3): the figure, the question, the user
             the same question is not stored again (UC-03 A1).
 open_flags  the reports still open, newest first, with what an admin needs to judge them:
             figure, caption, handbook, printed page, question, reason, who and when.
+dismiss_flag  an Admin closes a report after checking that the figure was right (UC-04): the report
+            leaves the queue and is kept, marked resolved / dismissed, with who and when
+            (migration 013). A report never removed the figure from the answers, so nothing else changes.
 
 Table: figure_flags (db/migrations/008_figure_flags.sql). Only figures that are searchable
 (searchable_figures) can be reported: a learner can only have seen those.
@@ -55,6 +58,22 @@ def save_flag(figure_id, user_id, query, reason=None):
             conn.rollback()
             return UNKNOWN_USER
         return CREATED if cur.fetchone() is not None else DUPLICATE
+
+
+def dismiss_flag(flag_id, admin_id, all_for_figure=False):
+    """Close an open report (and, with all_for_figure, every open report of the same figure).
+    Returns the number of reports closed: 0 when the report does not exist or is already closed."""
+    with _connect() as conn:
+        row = conn.execute("SELECT figure_id FROM figure_flags WHERE id = %s AND status = 'open'",
+                           (flag_id,)).fetchone()
+        if row is None:
+            return 0
+        which = "figure_id = %(figure)s" if all_for_figure else "id = %(flag)s"
+        return conn.execute(f"""UPDATE figure_flags
+                                SET status = 'resolved', resolution = 'dismissed',
+                                    resolved_at = now(), resolved_by = %(admin)s
+                                WHERE status = 'open' AND {which}""",
+                            {"figure": row[0], "flag": flag_id, "admin": admin_id}).rowcount
 
 
 def open_flags(limit=MAX_LISTED):

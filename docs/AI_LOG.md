@@ -516,3 +516,11 @@ One entry per significant delegation to an AI tool. Record what was wrong, even 
 - **What was wrong, and how it was caught:** (1) the first figure layout printed "Figure 5-2." twice: the stored caption already starts with the handbook's label; seen on the real 25C data, fixed with `chat/caption.jsx` (the label is set in bold, never repeated). (2) The new foreign key from `answer_ratings` to `query_log` broke `TRUNCATE query_log` in two test fixtures; caught by the test run, fixed with `TRUNCATE ... CASCADE`. (3) Screenshots showed the period buttons wrapping and the Good / Bad buttons splitting on a phone; fixed in the CSS.
 - **How we checked it:** in Claude's copy: test_ratings + test_analytics (new) and the whole suite: 425 passed; the 17 errors and 2 failures need the real data or are Windows paths (`C:/data/x.png`), and fail the same way without these changes. `vite build` passes. Screenshots at phone (iPhone 13) and desktop width of every page. NOT yet: the full suite on Mia's PC, and the pages against the real server and database (needs `python ingestion/migrate.py` for migration 012).
 - **Commit / PR:** branch `feature/P7-56-flightwise-ui`
+
+### 2026-11-18 - Dismiss a "Wrong figure" report (UC-04)
+- **Who:** Mia
+- **Tool:** Claude (code, tests)
+- **What we asked:** test reports made while trying the page should not stay in the QA queue; an Admin must be able to close a report after checking that the figure is right.
+- **What came back:** migration 013 (`resolved_at`, `resolved_by`, `resolution` on `figure_flags`; a report is never deleted), `flags.dismiss_flag()`, `POST /admin/flags/{id}/dismiss` (Admins only, optionally all open reports of the same figure), "Dismiss report" buttons on the QA queue page. Checked in the code first: a report never removed a figure from the answers (the search reads `searchable_figures`, which does not look at `figure_flags`), so dismissing changes only the queue; a test now states it.
+- **How we checked it:** test_flags + test_migrate + test_ratings + test_analytics + test_query_log: 76 passed in Claude's copy (temporary PostgreSQL + pgvector); `vite build` passes; the dismiss flow clicked through in a browser with mocked API answers. NOT yet: on Mia's PC with the real database (`python ingestion/migrate.py` for 013).
+- **Commit / PR:** branch `feature/P7-56-flightwise-ui`

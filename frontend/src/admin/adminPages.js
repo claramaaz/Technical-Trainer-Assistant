@@ -21,7 +21,7 @@ export const ADMIN_PAGES = [
       "Correct its caption, page or reference, edit its tags, or remove it",
       "See who changed what and when",
     ],
-    empty: "When a learner presses \"Wrong figure\" on an answer, the figure appears here with the question it was returned for.",
+    empty: "When a learner presses \"Wrong figure\" on an answer, the figure appears here with the question it was returned for. The figure keeps appearing in answers.",
   },
   {
     path: "/admin/coverage",

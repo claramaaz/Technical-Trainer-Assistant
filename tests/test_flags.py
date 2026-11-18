@@ -190,3 +190,64 @@ def test_database_refuses_an_unknown_status(flag_db):
         db.execute("INSERT INTO figure_flags (figure_id, user_id, query, status) VALUES (%s, %s, 'q', 'deleted')",
                    (figures["1-1"], a))
     db.rollback()
+
+
+# --- an Admin dismisses a report (UC-04, migration 013) -------------------------------------------
+
+@pytest.mark.real_auth
+def test_learner_cannot_dismiss_a_report(monkeypatch):
+    monkeypatch.setattr(flags, "dismiss_flag", lambda *a, **k: pytest.fail("must not be called"))
+    token = auth.make_token({"id": 1, "email": "learner@test.com", "role": "learner"})
+    r = client.post("/admin/flags/5/dismiss", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+@pytest.mark.real_auth
+@pytest.mark.parametrize("body, expected", [(None, False), ({}, False), ({"all_for_figure": True}, True)])
+def test_admin_dismisses_one_report_or_all_reports_of_the_figure(monkeypatch, body, expected):
+    calls = []
+    monkeypatch.setattr(flags, "dismiss_flag", lambda flag_id, admin_id, all_for_figure=False:
+                        calls.append((flag_id, admin_id, all_for_figure)) or (3 if all_for_figure else 1))
+    token = auth.make_token({"id": 2, "email": "admin@test.com", "role": "admin"})
+    r = client.post("/admin/flags/5/dismiss", json=body, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200 and r.json() == {"status": "dismissed", "count": 3 if expected else 1}
+    assert calls == [(5, 2, expected)]
+
+
+@pytest.mark.real_auth
+def test_dismissing_an_unknown_or_closed_report_is_404(monkeypatch):
+    monkeypatch.setattr(flags, "dismiss_flag", lambda *a, **k: 0)
+    token = auth.make_token({"id": 2, "email": "admin@test.com", "role": "admin"})
+    assert client.post("/admin/flags/999/dismiss", headers={"Authorization": f"Bearer {token}"}).status_code == 404
+
+
+def test_dismissed_report_leaves_the_queue_and_keeps_who_and_when(flag_db):
+    db, figures, a, b = flag_db
+    flags.save_flag(figures["1-1"], a, "four forces")
+    flags.save_flag(figures["1-2"], a, "drag")
+    [drag, forces] = flags.open_flags()
+    assert flags.dismiss_flag(forces["id"], b) == 1
+    assert [q["query"] for q in flags.open_flags()] == ["drag"]
+    db.commit()
+    status, resolution, resolved_by, resolved_at = db.execute(
+        "SELECT status, resolution, resolved_by, resolved_at FROM figure_flags WHERE id = %s", (forces["id"],)).fetchone()
+    assert (status, resolution, resolved_by) == ("resolved", "dismissed", b) and resolved_at is not None
+    assert flags.dismiss_flag(forces["id"], b) == 0          # already closed
+
+
+def test_dismiss_all_reports_of_the_figure(flag_db):
+    db, figures, a, b = flag_db
+    flags.save_flag(figures["1-1"], a, "four forces")
+    flags.save_flag(figures["1-1"], b, "lift")
+    flags.save_flag(figures["1-2"], a, "drag")
+    lift = flags.open_flags()[1]
+    assert lift["query"] == "lift"
+    assert flags.dismiss_flag(lift["id"], b, all_for_figure=True) == 2
+    assert [q["query"] for q in flags.open_flags()] == ["drag"]
+
+
+def test_a_report_never_hides_the_figure_from_search(flag_db):
+    db, figures, a, _ = flag_db
+    flags.save_flag(figures["1-1"], a, "four forces", "wrong")
+    db.commit()
+    assert db.execute("SELECT 1 FROM searchable_figures WHERE id = %s", (figures["1-1"],)).fetchone()
