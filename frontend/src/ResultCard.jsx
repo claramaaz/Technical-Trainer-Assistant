@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ViewSource from "./ViewSource.jsx";
 import WrongFigure from "./WrongFigure.jsx";
 
 // One search result: caption, handbook name + printed page, source passage, then the figure.
@@ -22,7 +23,7 @@ export default function ResultCard({ result, query, onSessionExpired }) {
   const figureLabel = result.figure_id ? `Figure ${result.figure_id}` : "Figure";
 
   return (
-    <article className="card">
+    <article className="card" id={`fig-${result.id}`}>
       <p className="source">
         <span className="figure-number">{figureLabel}</span>
         {result.handbook}, page {result.printed_page}
@@ -57,6 +58,8 @@ export default function ResultCard({ result, query, onSessionExpired }) {
           Open full-size figure
         </a>
       )}
+
+      <ViewSource result={result} />
 
       {/* P7-38 (UC-03): shown even if the image failed, so a broken figure can be reported. */}
       <WrongFigure figureId={result.id} query={query} onSessionExpired={onSessionExpired} />
