@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PageHead from "./PageHead.jsx";
 
 // QA queue page (P7-38 fills it; P7-36 made the empty layout). Lists the figures learners
 // reported with "Wrong figure" (GET /admin/flags, Admins only). Correcting or closing a report
@@ -27,12 +28,11 @@ export default function QaQueue({ page, onSessionExpired }) {
 
   return (
     <section className="admin-page">
-      <h1>{page.title}</h1>
-      <p className="admin-lead">{page.purpose}</p>
+      <PageHead page={page} />
 
       {state === "loading" && <p className="qa-note">Loading reports…</p>}
       {state === "error" && (
-        <p className="qa-note admin-denied" role="alert">
+        <p className="notice notice-error" role="alert">
           The reports could not be loaded. Try again later.
         </p>
       )}

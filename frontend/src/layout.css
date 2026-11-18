@@ -1,0 +1,55 @@
+/* App frame: learner header, admin sidebar, loading screen. */
+.app-loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 100vh; margin: 0; color: var(--navy); }
+
+.learner { --header-h: 60px; min-height: 100vh; }
+.app-header {
+  position: sticky; top: 0; z-index: 5; height: var(--header-h);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 0 16px; background: var(--white); border-bottom: 1px solid var(--line);
+}
+.app-home { text-decoration: none; min-width: 0; }
+.user-menu { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.user-email { font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22ch; }
+.learner-note { max-width: 728px; margin: 12px auto 0; }
+@media (max-width: 520px) {
+  .app-header .wordmark-sub { display: none; }
+  .app-header .user-email { display: none; }
+}
+
+/* Admin: a navy sidebar on a computer, a top bar with a sideways-scrolling menu on a phone. */
+.admin-shell { --header-h: 0px; min-height: 100vh; display: flex; flex-direction: column; }
+.sidebar { background: var(--navy); color: #dfe7f3; display: flex; flex-direction: column; }
+.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 14px 16px; color: var(--white); text-decoration: none; }
+.sidebar-brand > span { display: flex; flex-direction: column; line-height: 1.2; }
+.sidebar-name { font-weight: 700; font-size: 16px; }
+.sidebar-role { font-size: 12px; color: #a9bad3; }
+.sidebar nav ul { list-style: none; margin: 0; padding: 0 8px 8px; display: flex; gap: 2px; overflow-x: auto; }
+.sidebar nav a {
+  display: block; padding: 8px 12px; border-radius: var(--radius-s);
+  color: #dfe7f3; text-decoration: none; font-size: 15px; white-space: nowrap;
+}
+.sidebar nav a:hover { background: rgba(255, 255, 255, 0.08); color: var(--white); }
+.sidebar nav a.active { background: var(--white); color: var(--navy); font-weight: 600; }
+.sidebar-user { display: none; }
+.sidebar-logout {
+  background: none; border: 1px solid rgba(255, 255, 255, 0.3); color: var(--white);
+  border-radius: var(--radius-s); padding: 6px 12px; font-size: 14px; cursor: pointer;
+}
+.sidebar-logout:hover { background: rgba(255, 255, 255, 0.1); }
+.admin-main { flex: 1; min-width: 0; }
+
+@media (max-width: 899px) {
+  .sidebar { position: sticky; top: 0; z-index: 5; }
+  .sidebar-brand { padding-bottom: 6px; }
+  .sidebar-user { display: flex; position: absolute; top: 12px; right: 16px; }
+  .sidebar-user .user-email { display: none; }
+}
+@media (min-width: 900px) {
+  .admin-shell { flex-direction: row; }
+  .sidebar { position: sticky; top: 0; height: 100vh; width: 232px; flex: none; }
+  .sidebar-brand { padding: 20px 18px; }
+  .sidebar nav ul { flex-direction: column; padding: 4px 10px; overflow: visible; }
+  .sidebar-user { display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding: 16px 18px; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+  .sidebar-user .user-email { color: #a9bad3; max-width: 100%; }
+  .sidebar-logout { align-self: flex-start; }
+}

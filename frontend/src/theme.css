@@ -1,0 +1,122 @@
+/* FlightWise design tokens and shared pieces (P7-56 design; Clara's brief: navy / white / light grey,
+   Inter, clean and professional, works on a phone, NFR-001).
+   Mobile first: one column that fills the screen; wider screens get more room, never more columns
+   for the learner. Status colours (warning, danger, good) are only used with a word next to them. */
+:root {
+  --navy: #102a4c;          /* brand, primary buttons, headings */
+  --navy-2: #1d4173;        /* links, hover */
+  --navy-tint: #e7edf6;     /* figure tags, selected states */
+  --ink: #18212d;           /* body text */
+  --muted: #5a6575;         /* secondary text */
+  --line: #d7dde5;          /* borders */
+  --grey: #f3f5f8;          /* page background */
+  --white: #ffffff;
+  --warning-bg: #fff6df;
+  --warning-line: #c48a12;
+  --warning-ink: #5c3f00;
+  --danger: #b42318;
+  --danger-bg: #fdecea;
+  --good: #11724b;
+
+  --radius-s: 6px;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(16, 42, 76, 0.06), 0 4px 16px rgba(16, 42, 76, 0.06);
+  --font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--grey);
+  font-feature-settings: "cv11", "ss01"; /* Inter: single-storey a off, open digits for page numbers */
+}
+h1, h2, h3 { line-height: 1.2; color: var(--navy); letter-spacing: -0.01em; }
+a { color: var(--navy-2); }
+img { max-width: 100%; }
+button, input, textarea, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid #5b8bd6; outline-offset: 2px; border-radius: 4px; }
+.num { font-variant-numeric: tabular-nums; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* Buttons. 44px high on touch screens (NFR-001). */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 40px; padding: 8px 16px;
+  border: 1px solid transparent; border-radius: var(--radius-s);
+  font-size: 15px; font-weight: 600; text-decoration: none; cursor: pointer;
+  background: var(--navy); color: var(--white);
+}
+.btn:hover { background: var(--navy-2); }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btn-quiet { background: var(--white); color: var(--navy); border-color: var(--line); }
+.btn-quiet:hover { background: var(--navy-tint); border-color: #b9c7db; }
+.btn-text {
+  background: none; border: 0; padding: 6px 4px; min-height: 0;
+  color: var(--navy-2); font-weight: 600; cursor: pointer; font-size: 14px;
+}
+.btn-text:hover { text-decoration: underline; background: none; }
+@media (pointer: coarse) { .btn { min-height: 44px; } }
+
+/* Fields */
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.field input, .field textarea, .field select {
+  font-size: 16px; /* 16px: iOS does not zoom into the field */
+  font-weight: 400;
+  padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius-s);
+  background: var(--white);
+}
+.field input:focus, .field textarea:focus, .field select:focus { outline: 2px solid var(--navy-2); outline-offset: 0; border-color: var(--navy-2); }
+.field-hint { font-weight: 400; color: var(--muted); font-size: 13px; }
+
+/* Notices (always a word with the colour) */
+.notice { padding: 10px 14px; border-radius: var(--radius-s); border: 1px solid var(--line); background: var(--white); font-size: 15px; }
+.notice-warning { background: var(--warning-bg); border-color: var(--warning-line); border-left-width: 4px; color: var(--warning-ink); }
+.notice-error { background: var(--danger-bg); border-color: #f1b8b2; color: var(--danger); }
+.notice-info { background: var(--navy-tint); border-color: #c7d4e7; color: var(--navy); }
+
+/* Figure number tag, as the handbooks print it */
+.fig-tag {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  background: var(--navy-tint); color: var(--navy); font-weight: 600; font-size: 13px;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+.loading-line { color: var(--muted); font-size: 15px; }
+.pulse { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+
+/* The figure "plate": the handbook's own figure, its caption printed the way the FAA handbooks
+   print it ("Figure 5-2. ..."), and the handbook + page on a tab (BR-002: caption, handbook and page
+   stay visible even if the image does not load). Shared by the chat and the landing example. */
+.plate {
+  position: relative;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.plate-image {
+  display: block; width: 100%; background: var(--white);
+  border: 0; padding: 12px; cursor: zoom-in;
+}
+.plate-image img { display: block; width: 100%; height: auto; max-height: 460px; object-fit: contain; }
+.plate-svg { display: block; width: 100%; height: auto; color: var(--navy); padding: 12px 12px 0; }
+.plate-placeholder {
+  min-height: 180px; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 14px; background: var(--grey);
+}
+.plate-text { padding: 10px 14px 12px; border-top: 1px solid var(--line); background: #fbfcfd; }
+.plate-caption { margin: 0; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+.plate-caption strong { color: var(--navy); }
+.plate-source { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.plate-source .page { color: var(--navy); font-weight: 600; font-variant-numeric: tabular-nums; }
+.plate-static .plate-text { border-top-color: var(--line); }
