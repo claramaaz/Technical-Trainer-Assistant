@@ -65,5 +65,5 @@ def test_low_confidence_is_logged_as_its_own_outcome(db, pg_test_dsn, monkeypatc
 def test_answer_route_also_gives_the_confidence(monkeypatch):
     monkeypatch.setattr(app_module, "retrieve", lambda q, k: ask(THRESHOLD + 0.01))
     monkeypatch.setattr(app_module, "generate_answer",
-                        lambda q, results, reason: {"mode": "extractive", "sentences": [], "fallback_reason": "test"})
+                        lambda q, results, reason, **kw: {"mode": "extractive", "sentences": [], "fallback_reason": "test"})
     assert TestClient(app_module.app).get("/answer", params={"q": "x"}).json()["confidence"] == "low"

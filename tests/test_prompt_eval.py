@@ -196,3 +196,18 @@ def test_run_once_puts_status_and_retries_in_the_row_and_resets_between_calls():
     assert (first["http_status"], first["retries"]) == (200, 2)
     refused, _ = pe.run_once("q", NO_ANSWER, SETTINGS, llm_after_retry, log)   # no call: nothing carried over
     assert (refused["http_status"], refused["retries"]) == ("", 0)
+
+
+def test_llm_refusal_rule_is_measured_with_the_retrieval_confidence():
+    weak = {**FOUND, "confidence": "low"}
+    row, _ = once(fake(), found=weak)
+    assert (row["mode"], row["fallback_reason"], row["returned"]) == ("no_answer", "llm_refused_low_confidence", 0)
+    row, _ = once(fake(), found={**FOUND, "confidence": "high"})
+    assert row["mode"] == "extractive"
+
+
+def test_answerable_questions_refused_by_the_llm_rule_are_listed():
+    rows = [row("Q1", 1, mode="no_answer", returned=0, kept=0, cited="", reason="llm_refused_low_confidence"),
+            row("Q2", 1, mode="no_answer", returned=0, kept=0, cited="", reason="llm_refused_low_confidence")]
+    s = pe.summarize(rows, QUESTIONS)
+    assert s["answerable_refused_by_llm"] == ["Q1"] and s["correct_refusals"] == 1

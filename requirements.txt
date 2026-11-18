@@ -10,3 +10,4 @@ pgvector>=0.3
 pillow>=10   # figure thumbnails (ingestion/make_thumbnails.py, NFR-001)
 PyJWT>=2.8      # login tokens (backend/auth.py, P7-35)
 bcrypt>=4.1     # password hashes (backend/auth.py, P7-35)
+python-multipart>=0.0.9   # PDF upload form of the admin (backend/app.py, P7-54)

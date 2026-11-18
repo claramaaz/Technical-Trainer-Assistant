@@ -1,0 +1,11 @@
+id,expected,first_mode,follow_up,rewritten,rewrite_fallback,mode_with_history,rank_with_history,rank_without_history,check
+F01,FAA-H-8083-15B 5-34,llm,What is the purpose of its rate gyro?,What is the purpose of the turn coordinator's rate gyro?,,llm,3,1,
+F02,FAA-H-8083-15B 7-52,llm,What components make up its display?,What components make up the attitude indicator's display?,,llm,1,1,
+F03,FAA-H-8083-15B 9-10,llm,How are its radials represented?,How are VOR radials represented?,,llm,1,1,
+F04,FAA-H-8083-15B 5-2,llm,What happens to the airspeed indicator if it gets blocked during a climb?,What happens to the airspeed indicator if the airspeed indicator gets blocked during a climb?,,llm,4,4,
+F05,FAA-H-8083-25C 12-28,llm,What are the stages in its life?,What are the stages in the life of a thunderstorm?,,llm,1,1,
+F06,FAA-H-8083-25C 7-17,llm,How does the oil flow through it?,How does the oil flow through a wet-sump oil system?,,llm,1,1,
+F07,FAA-H-8083-25C 14-30,llm,What do its lights show when I am too high or too low?,What do the PAPI lights indicate when I am too high or too low?,,llm,1,,
+F08,FAA-H-8083-25C 14-38,llm,How do I use it to find the landing direction?,How do I use the segmented circle to find the landing direction?,,llm,1,,
+F09,FAA-H-8083-25C 5-55,llm,How do I read it?,How do I read the V‑g diagram?,,llm,1,,
+F10,FAA-H-8083-25C 11-4,extractive,How do I find it from the chart using the temperature and the pressure altitude?,How do I find density altitude from the chart using temperature and pressure altitude?,,llm,2,1,

@@ -99,13 +99,17 @@ def read_sources(handbook_id, model=DEFAULT_MODEL, root=ROOT):
         for r in csv.DictReader(fh):
             if r["id"] == handbook_id:
                 row = r
+    meta_path = root / "data" / "raw" / f"{handbook_id}.meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else None
+    if row is None and meta and meta.get("uploaded_by_admin"):
+        # P7-54: a handbook uploaded by an Admin from the web interface is not in corpus/handbooks.csv
+        # (a file in Git); its title, source URL and licence were typed in the upload form (BR-001).
+        row = {"id": handbook_id, "title": meta.get("title"), "url": meta.get("source_url"),
+               "licence": meta.get("licence")}
     if row is None:
         raise LoadError(f"{handbook_id} is not listed in corpus/handbooks.csv")
-
-    meta_path = root / "data" / "raw" / f"{handbook_id}.meta.json"
-    if not meta_path.exists():
+    if meta is None:
         raise LoadError(f"{meta_path} not found: the retrieval date is required (BR-001)")
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
     if not row.get("url") or not meta.get("retrieved_at"):
         raise LoadError("source URL and retrieval date are required (BR-001)")
 

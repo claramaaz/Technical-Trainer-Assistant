@@ -1,4 +1,4 @@
-"""FastAPI app: POST /login, POST /flags, GET /admin/flags, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
+"""FastAPI app: POST /login, POST /chat, POST/GET /admin/documents, GET /admin/ingestion-jobs/{id}, POST /flags, GET /admin/flags, POST /logout, GET /me, GET /admin/ping, GET /search, GET /answer, GET /figures/{id}/image, GET /figures/{id}/thumbnail,
 GET /figures/{id}/page-image, GET /health,
 and the React page at /
 (the built files in frontend/dist; create them with: cd frontend && npm run build).
@@ -13,14 +13,16 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend import auth, flags, retrieval
+from backend import auth, embedding, flags, ingest_jobs, retrieval
 from backend.answer import generate_answer
+from backend.chat import chat_turn
 from backend.query_log import elapsed_ms, log_query
 from backend.retrieval import image_path_for, page_image_path_for, retrieve, thumbnail_path_for
 
@@ -47,9 +49,21 @@ def warm_up():
     return True
 
 
+def close_interrupted_jobs():
+    """P7-54: an ingestion job cut by a restart can never finish; mark it failed so the admin sees it."""
+    try:
+        count = ingest_jobs.mark_interrupted()
+    except Exception as exc:
+        log.warning("could not check the ingestion jobs (%s): %s", type(exc).__name__, exc)
+        return
+    if count:
+        log.warning("%d ingestion job(s) were interrupted by the restart and marked failed", count)
+
+
 @asynccontextmanager
 async def lifespan(app):
     warm_up()
+    close_interrupted_jobs()
     yield
 
 
@@ -153,7 +167,12 @@ def answer(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, 
     query, start = q.strip(), time.perf_counter()
     try:
         found = retrieve(query, k)
-        answer_ = generate_answer(query, found["results"], found["reason"])
+        answer_ = generate_answer(query, found["results"], found["reason"],
+                                  confidence=found.get("confidence"))
+        if answer_["mode"] == "no_answer" and found["results"]:
+            # The LLM found no passage about the question on a low-confidence match (answer.py, rule 4).
+            # FR-002 / UC-02 A1: show no weak match, and count the question as unanswered (FR-007).
+            found = {"results": [], "reason": retrieval.NO_ANSWER}
     except Exception as exc:
         log_query("answer", query, elapsed_ms(start), error=exc)
         raise
@@ -162,6 +181,102 @@ def answer(q: str = Query(..., min_length=1, max_length=500), k: int = Query(5, 
     if "confidence" in found:          # same rule as /search: only present when figures are returned
         body["confidence"] = found["confidence"]
     return body
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=4000)
+
+
+class ChatBody(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    history: list[ChatMessage] = Field(default_factory=list, max_length=20)  # earlier turns, oldest first
+    k: int = Field(5, ge=1, le=20)
+
+
+@app.post("/chat", dependencies=[Depends(auth.current_user)])
+def chat(body: ChatBody):
+    # P7-51 (supervisor, 13 Nov 2026): cumulative RAG chat. The browser sends the conversation so far
+    # with every message, so follow-up questions work. See backend/chat.py for the 4 steps.
+    message = body.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="message must not be blank")
+    start = time.perf_counter()
+    try:
+        turn = chat_turn(message, [m.model_dump() for m in body.history], body.k)
+    except Exception as exc:
+        log_query("chat", message, elapsed_ms(start), error=exc)
+        raise
+    found = {"results": turn["results"], "reason": turn["reason"]}
+    if "confidence" in turn:
+        found["confidence"] = turn["confidence"]
+    # query_id: the row of this question in query_log, so the page can send a good / bad rating for
+    # this answer (P7-53). None when the log could not be written (the answer is still returned).
+    turn["query_id"] = log_query("chat", message, elapsed_ms(start), found=found,
+                                 answer_mode=turn["answer"]["mode"],
+                                 rewritten_query=turn["question"] if turn["question"] != message else None)
+    return turn
+
+
+@app.post("/admin/documents", status_code=202)
+def upload_document(file: UploadFile = File(...), id: str = Form(...), title: str = Form(...),
+                    source_url: str = Form(...), licence: str = Form(...), retrieved_at: str = Form(""),
+                    user=Depends(auth.require_admin)):
+    # P7-54 (UC-01, BR-001, BR-003; supervisor 13 Nov): an Admin uploads a handbook PDF from the
+    # Sources panel. The file is checked and stored, then the ingestion runs in the background:
+    # 202 Accepted with the job id; the page follows the job with GET /admin/ingestion-jobs/{id}.
+    try:
+        job_id = ingest_jobs.save_upload(file.file, id, title, source_url, licence, retrieved_at, user["id"])
+    except ingest_jobs.UploadError as exc:
+        raise HTTPException(status_code=exc.args[1], detail=exc.args[0]) from None
+    ingest_jobs.start(job_id)
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/admin/documents")
+def admin_documents(user=Depends(auth.require_admin)):
+    # The Sources panel (P7-40): every handbook in the database and the recent ingestion jobs.
+    return {"documents": ingest_jobs.list_documents(), "jobs": ingest_jobs.list_jobs()}
+
+
+class ReindexBody(BaseModel):
+    handbook_id: str = Field("ALL", min_length=1, max_length=60)   # one handbook id, or "ALL"
+
+
+@app.post("/admin/reindex", status_code=202)
+def admin_reindex(body: ReindexBody, user=Depends(auth.require_admin)):
+    # P7-32 (FR-008, UC-10): rebuild the figure vectors of one handbook or of all, in the background.
+    # All vectors are computed before anything is written, so a failure keeps the previous index.
+    handbook_id = body.handbook_id.strip()
+    try:
+        job_id = ingest_jobs.create_reindex_job(handbook_id, user["id"])
+    except ingest_jobs.UploadError as exc:
+        raise HTTPException(status_code=exc.args[1], detail=exc.args[0]) from None
+    ingest_jobs.start(job_id, todo=ingest_jobs.reindex_steps(handbook_id))
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.post("/admin/figures/{figure_id}/reembed")
+def admin_reembed_figure(figure_id: int, user=Depends(auth.require_admin)):
+    # P7-32 (UC-04): after an admin corrects a figure (QA queue, P7-41), its vectors are recomputed from
+    # its stored text, so the next searches use the correction. Synchronous: one figure is quick.
+    import reindex   # ingestion/reindex.py (the folder is on sys.path, see backend/retrieval.py)
+    try:
+        with retrieval.connect(retrieval.connection_string()) as conn:
+            done = reindex.reembed_figure(conn, figure_id)
+    except embedding.EmbeddingError as exc:     # nothing was written: the old vectors stay
+        raise HTTPException(status_code=503, detail=f"embedding service unavailable, try again later ({exc})") from None
+    if done == 0:
+        raise HTTPException(status_code=404, detail="figure not found")
+    return {"status": "re-embedded", "figure_id": figure_id}
+
+
+@app.get("/admin/ingestion-jobs/{job_id}")
+def admin_ingestion_job(job_id: int, user=Depends(auth.require_admin)):
+    job = ingest_jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    return job
 
 
 @app.get("/figures/{figure_id}/image", dependencies=[Depends(auth.current_user)])

@@ -245,7 +245,7 @@ def reformulation_lines(rows):
 def summary_text(label, result, questions, meta, extra_lines=()):
     lines = [f"# Evaluation run `{label}`", "",
              f"- Date (UTC): {meta.get('date', '?')}; git commit: {meta.get('commit', '?')}",
-             f"- Model: {retrieval.MODEL_NAME}; threshold: {retrieval.THRESHOLD}; top {TOP_K}",
+             f"- Model: {retrieval.text_model()}; thresholds (no answer, low confidence): {retrieval.thresholds()}; top {TOP_K}",
              f"- Retrieval mode: {meta.get('mode', 'text')}" + mode_details(meta.get("mode", "text"))
              + (f"; rewrite prompt {meta['prompt']}" if meta.get("prompt") else ""),
              f"- Questions: {len(questions)} ({sum(answerable(q) for q in questions)} answerable, "

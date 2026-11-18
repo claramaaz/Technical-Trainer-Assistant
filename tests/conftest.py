@@ -25,6 +25,19 @@ def text_mode_unless_a_test_chooses(monkeypatch):
     monkeypatch.setenv("RETRIEVAL_MODE", "text")
 
 
+@pytest.fixture(autouse=True)
+def bge_text_model_unless_a_test_chooses(monkeypatch):
+    """Tests do not depend on EMBEDDING_MODEL in the developer's .env (P7-57): the local bge model, so
+    no test ever calls the Gemini or OpenAI API, and the bge thresholds the tests were written for."""
+    monkeypatch.setenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+    monkeypatch.delenv("RETRIEVAL_THRESHOLD", raising=False)
+    monkeypatch.delenv("RETRIEVAL_LOW_CONFIDENCE", raising=False)
+    from backend import answer, retrieval
+    monkeypatch.setattr(retrieval, "QUERY_CACHE", None)     # never the developer's cache file
+    monkeypatch.setattr(retrieval, "_query_cache", None)
+    monkeypatch.setattr(answer, "_sleep", lambda seconds: None)  # no real wait on a fake 429
+
+
 def pytest_configure(config):
     config.addinivalue_line("markers", "real_auth: use the real login checks (tests/test_auth.py)")
 
